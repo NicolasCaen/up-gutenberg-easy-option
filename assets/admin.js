@@ -17,6 +17,9 @@
       .up-ge-block-header { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
       .up-ge-block-header input[type="text"] { min-width: 220px; }
       .up-ge-controls { margin-left: 0.5rem; }
+      .up-ge-panel { border: 1px solid #e2e4e7; background: #fff; padding: 0.75rem; margin-bottom: 0.75rem; }
+      .up-ge-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+      .up-ge-panel-title { font-weight: 600; }
       .up-ge-control { border: 1px solid #e2e4e7; background: #f6f7f7; padding: 0.75rem; margin-bottom: 0.75rem; }
       .up-ge-control h4 { margin: 0 0 0.5rem; font-size: 15px; }
       .up-ge-field { margin-bottom: 0.6rem; }
@@ -27,6 +30,12 @@
       .up-ge-flex { display: flex; gap: 0.75rem; flex-wrap: wrap; }
       .up-ge-actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; }
       .up-ge-empty { font-style: italic; color: #646970; margin-bottom: 0.5rem; }
+      .up-ge-badge { display: inline-block; padding: 2px 6px; background: #f0f0f1; border: 1px solid #dcdcde; border-radius: 3px; font-size: 11px; margin-right: 6px; }
+      .up-ge-chip { display: inline-block; padding: 2px 6px; background: #eef6ff; border: 1px solid #a8d1ff; border-radius: 14px; font-size: 11px; margin: 2px 4px 2px 0; }
+      .up-ge-help { color: #646970; font-size: 12px; margin: 4px 0 8px; }
+      .up-ge-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; }
+      .up-ge-col { min-width: 0; }
+      @media (max-width: 960px) { .up-ge-row { grid-template-columns: 1fr; } }
     `;
     document.head.appendChild(style);
   }
@@ -67,6 +76,7 @@
         label: opt.label || '',
         classes: arrayToString(opt.classes || opt.class || ''),
       })),
+      _collapsed: true,
     };
   }
 
@@ -86,6 +96,9 @@
     block.controls.forEach((control) => {
       if (!Array.isArray(control.options)) {
         control.options = [];
+      }
+      if (typeof control._collapsed !== 'boolean') {
+        control._collapsed = true;
       }
     });
   }
@@ -179,6 +192,7 @@
       description: '',
       classes: '',
       options: [],
+      _collapsed: true,
     };
     block.controls.push(control);
   }
@@ -208,7 +222,7 @@
       const nameInput = document.createElement('input');
       nameInput.type = 'text';
       nameInput.className = 'regular-text';
-      nameInput.placeholder = strings.blockNamePlaceholder || 'core/paragraph';
+      nameInput.placeholder = strings.blockNamePlaceholder || 'core/paragraph, core/heading';
       nameInput.value = block.name || '';
       nameInput.addEventListener('input', (e) => {
         block.name = e.target.value;
@@ -242,187 +256,317 @@
         controlsWrapper.appendChild(empty);
       }
 
+      // Grouper par panel
+      const panels = {};
       block.controls.forEach((control, controlIndex) => {
-        const controlEl = document.createElement('div');
-        controlEl.className = 'up-ge-control';
+        const panelKey = (control.panel || 'Options UP').trim() || 'Options UP';
+        if (!panels[panelKey]) {
+          panels[panelKey] = [];
+        }
+        panels[panelKey].push({ control, controlIndex });
+      });
 
-        const controlTitle = document.createElement('h4');
-        controlTitle.textContent = control.label || control.id || (strings.addControl || 'Contrôle');
-        controlEl.appendChild(controlTitle);
+      Object.keys(panels).forEach((panelName) => {
+        const panelEl = document.createElement('div');
+        panelEl.className = 'up-ge-panel';
 
-        const typeSelect = document.createElement('select');
-        typeSelect.innerHTML = [
-          { value: 'toggle', label: strings.toggle || 'Toggle' },
-          { value: 'select', label: strings.select || 'Select' },
-          { value: 'preset', label: strings.preset || 'Preset' },
-        ]
-          .map((option) => `<option value="${option.value}">${option.label}</option>`)
-          .join('');
-        typeSelect.value = control.type || 'toggle';
-        typeSelect.addEventListener('change', (e) => {
-          control.type = e.target.value;
-          if (control.type === 'toggle') {
-            control.options = [];
-          } else if (!Array.isArray(control.options)) {
-            control.options = [];
-          }
+        const header = document.createElement('div');
+        header.className = 'up-ge-panel-header';
+        const title = document.createElement('div');
+        title.className = 'up-ge-panel-title';
+        title.textContent = `${panelName} – Blocs: ${block.name || ''}`;
+        header.appendChild(title);
+
+        const editAll = document.createElement('button');
+        editAll.type = 'button';
+        editAll.className = 'button';
+        editAll.textContent = 'Éditer le panneau';
+        editAll.addEventListener('click', () => {
+          panels[panelName].forEach(({ control }) => control._collapsed = false);
           render();
-          updateInput();
         });
-        controlEl.appendChild(createField(strings.type || 'Type', typeSelect));
+        header.appendChild(editAll);
+        panelEl.appendChild(header);
 
-        const idInput = document.createElement('input');
-        idInput.type = 'text';
-        idInput.className = 'regular-text';
-        idInput.value = control.id || '';
-        idInput.addEventListener('input', (e) => {
-          control.id = e.target.value;
-          updateInput();
-        });
-        controlEl.appendChild(createField(strings.id || 'Identifiant', idInput));
+        panels[panelName].forEach(({ control, controlIndex }) => {
+          const controlEl = document.createElement('div');
+          controlEl.className = 'up-ge-control';
 
-        const labelInput = document.createElement('input');
-        labelInput.type = 'text';
-        labelInput.className = 'regular-text';
-        labelInput.value = control.label || '';
-        labelInput.addEventListener('input', (e) => {
-          control.label = e.target.value;
-          controlTitle.textContent = e.target.value || control.id || (strings.addControl || 'Contrôle');
-          updateInput();
-        });
-        controlEl.appendChild(createField(strings.label || 'Libellé', labelInput));
+          const controlTitle = document.createElement('h4');
+          controlTitle.textContent = control.label || control.id || (strings.addControl || 'Contrôle');
+          controlEl.appendChild(controlTitle);
 
-        const panelInput = document.createElement('input');
-        panelInput.type = 'text';
-        panelInput.className = 'regular-text';
-        panelInput.value = control.panel || '';
-        panelInput.addEventListener('input', (e) => {
-          control.panel = e.target.value;
-          updateInput();
-        });
-        controlEl.appendChild(createField(strings.panel || 'Panneau', panelInput));
+          if (control._collapsed) {
+            // Aperçu
+            const summary = document.createElement('div');
+            const badge = document.createElement('span');
+            badge.className = 'up-ge-badge';
+            badge.textContent = control.type || 'toggle';
+            summary.appendChild(badge);
 
-        const descInput = document.createElement('textarea');
-        descInput.className = 'large-text';
-        descInput.rows = 2;
-        descInput.value = control.description || '';
-        descInput.addEventListener('input', (e) => {
-          control.description = e.target.value;
-          updateInput();
-        });
-        controlEl.appendChild(createField(strings.description || 'Description', descInput));
+            if (control.type === 'toggle') {
+              const chips = (control.classes || '').split(/\s+/).filter(Boolean);
+              chips.forEach((c) => {
+                const chip = document.createElement('span');
+                chip.className = 'up-ge-chip';
+                chip.textContent = c;
+                summary.appendChild(chip);
+              });
+            } else {
+              (control.options || []).forEach((opt) => {
+                const optWrap = document.createElement('div');
+                const optBadge = document.createElement('span');
+                optBadge.className = 'up-ge-badge';
+                optBadge.textContent = opt.id || opt.label || 'option';
+                optWrap.appendChild(optBadge);
+                const chips = (opt.classes || '').split(/\s+/).filter(Boolean);
+                chips.forEach((c) => {
+                  const chip = document.createElement('span');
+                  chip.className = 'up-ge-chip';
+                  chip.textContent = c;
+                  optWrap.appendChild(chip);
+                });
+                summary.appendChild(optWrap);
+              });
+            }
 
-        if (control.type === 'toggle') {
-          const classesInput = document.createElement('input');
-          classesInput.type = 'text';
-          classesInput.className = 'regular-text';
-          classesInput.placeholder = 'is-large is-bold';
-          classesInput.value = control.classes || '';
-          classesInput.addEventListener('input', (e) => {
-            control.classes = e.target.value;
-            updateInput();
-          });
-          controlEl.appendChild(createField(strings.classes || 'Classes', classesInput));
-        } else {
-          const optionsWrapper = document.createElement('div');
-          optionsWrapper.className = 'up-ge-options';
+            const actions = document.createElement('div');
+            actions.className = 'up-ge-actions';
+            const editBtn = document.createElement('button');
+            editBtn.type = 'button';
+            editBtn.className = 'button';
+            editBtn.textContent = 'Éditer';
+            editBtn.addEventListener('click', () => {
+              control._collapsed = false;
+              render();
+            });
+            actions.appendChild(editBtn);
+            controlEl.appendChild(summary);
+            controlEl.appendChild(actions);
+          } else {
+            // Édition complète (rendu avec 'Panneau' en premier)
+            const panelInput = document.createElement('input');
+            panelInput.type = 'text';
+            panelInput.className = 'regular-text';
+            panelInput.value = control.panel || '';
+            panelInput.addEventListener('input', (e) => {
+              control.panel = e.target.value;
+              updateInput();
+            });
+            const panelField = createField(strings.panel || 'Panneau', panelInput);
+            const panelHelp = document.createElement('div');
+            panelHelp.className = 'up-ge-help';
+            panelHelp.textContent = 'Pour mettre dans le même panneau, écrivez exactement le même nom.';
+            panelField.appendChild(panelHelp);
+            controlEl.appendChild(panelField);
 
-          (control.options || []).forEach((opt, optionIndex) => {
-            const optionEl = document.createElement('div');
-            optionEl.className = 'up-ge-option';
+            // Ligne: Type, Identifiant de l'input, Label de l'input
+            const mainRow = document.createElement('div');
+            mainRow.className = 'up-ge-row';
 
-            const heading = document.createElement('div');
-            heading.className = 'up-ge-option-title';
-            heading.innerHTML = `<strong>${strings.optionLabel || 'Option'} ${optionIndex + 1}</strong>`;
-
-            const removeOption = document.createElement('button');
-            removeOption.type = 'button';
-            removeOption.className = 'button button-link-delete';
-            removeOption.textContent = strings.remove || 'Supprimer';
-            removeOption.addEventListener('click', () => {
-              control.options.splice(optionIndex, 1);
+            const typeSelect = document.createElement('select');
+            typeSelect.innerHTML = [
+              { value: 'toggle', label: strings.toggle || 'Toggle' },
+              { value: 'select', label: strings.select || 'Select' },
+              { value: 'preset', label: strings.preset || 'Preset' },
+            ]
+              .map((option) => `<option value=\"${option.value}\">${option.label}</option>`)
+              .join('');
+            typeSelect.value = control.type || 'toggle';
+            typeSelect.addEventListener('change', (e) => {
+              control.type = e.target.value;
+              if (control.type === 'toggle') {
+                control.options = [];
+              } else if (!Array.isArray(control.options)) {
+                control.options = [];
+              }
               render();
               updateInput();
             });
-            heading.appendChild(removeOption);
-            optionEl.appendChild(heading);
+            const typeCol = document.createElement('div');
+            typeCol.className = 'up-ge-col';
+            typeCol.appendChild(createField(strings.type || 'Type', typeSelect));
+            mainRow.appendChild(typeCol);
 
-            const optId = document.createElement('input');
-            optId.type = 'text';
-            optId.className = 'regular-text';
-            optId.value = opt.id || '';
-            optId.addEventListener('input', (e) => {
-              opt.id = e.target.value;
+            const idInput = document.createElement('input');
+            idInput.type = 'text';
+            idInput.className = 'regular-text';
+            idInput.value = control.id || '';
+            idInput.addEventListener('input', (e) => {
+              control.id = e.target.value;
               updateInput();
             });
-            optionEl.appendChild(createField(strings.optionId || 'Identifiant option', optId));
+            const idCol = document.createElement('div');
+            idCol.className = 'up-ge-col';
+            idCol.appendChild(createField('Identifiant de l\'input', idInput));
+            mainRow.appendChild(idCol);
 
-            const optLabel = document.createElement('input');
-            optLabel.type = 'text';
-            optLabel.className = 'regular-text';
-            optLabel.value = opt.label || '';
-            optLabel.addEventListener('input', (e) => {
-              opt.label = e.target.value;
+            const labelInput = document.createElement('input');
+            labelInput.type = 'text';
+            labelInput.className = 'regular-text';
+            labelInput.value = control.label || '';
+            labelInput.addEventListener('input', (e) => {
+              control.label = e.target.value;
+              controlTitle.textContent = e.target.value || control.id || (strings.addControl || 'Contrôle');
               updateInput();
             });
-            optionEl.appendChild(createField(strings.optionLabel || 'Libellé option', optLabel));
+            const labelCol = document.createElement('div');
+            labelCol.className = 'up-ge-col';
+            labelCol.appendChild(createField('Label de l\'input', labelInput));
+            mainRow.appendChild(labelCol);
 
-            const optClasses = document.createElement('input');
-            optClasses.type = 'text';
-            optClasses.className = 'regular-text';
-            optClasses.placeholder = 'is-large is-bold';
-            optClasses.value = opt.classes || '';
-            optClasses.addEventListener('input', (e) => {
-              opt.classes = e.target.value;
+            controlEl.appendChild(mainRow);
+
+            const descInput = document.createElement('textarea');
+            descInput.className = 'large-text';
+            descInput.rows = 2;
+            descInput.value = control.description || '';
+            descInput.addEventListener('input', (e) => {
+              control.description = e.target.value;
               updateInput();
             });
-            optionEl.appendChild(createField(strings.optionClasses || 'Classes option', optClasses));
+            controlEl.appendChild(createField(strings.description || 'Description', descInput));
 
-            optionsWrapper.appendChild(optionEl);
-          });
+            if (control.type === 'toggle') {
+              const classesInput = document.createElement('input');
+              classesInput.type = 'text';
+              classesInput.className = 'regular-text';
+              classesInput.placeholder = 'is-large is-bold';
+              classesInput.value = control.classes || '';
+              classesInput.addEventListener('input', (e) => {
+                control.classes = e.target.value;
+                updateInput();
+              });
+              controlEl.appendChild(createField(strings.classes || 'Classes', classesInput));
+            } else {
+              const optionsWrapper = document.createElement('div');
+              optionsWrapper.className = 'up-ge-options';
 
-          const addOptionBtn = document.createElement('button');
-          addOptionBtn.type = 'button';
-          addOptionBtn.className = 'button';
-          addOptionBtn.textContent = strings.optionLabel ? `${strings.optionLabel} +` : 'Ajouter une option';
-          addOptionBtn.addEventListener('click', () => {
-            addOption(control);
-            render();
-            updateInput();
-          });
-          optionsWrapper.appendChild(addOptionBtn);
+              (control.options || []).forEach((opt, optionIndex) => {
+                const optionEl = document.createElement('div');
+                optionEl.className = 'up-ge-option';
 
-          controlEl.appendChild(optionsWrapper);
-        }
+                const heading = document.createElement('div');
+                heading.className = 'up-ge-option-title';
+                heading.innerHTML = `<strong>${strings.optionLabel || 'Option'} ${optionIndex + 1}</strong>`;
 
-        const controlActions = document.createElement('div');
-        controlActions.className = 'up-ge-actions';
+                const removeOption = document.createElement('button');
+                removeOption.type = 'button';
+                removeOption.className = 'button button-link-delete';
+                removeOption.textContent = strings.remove || 'Supprimer';
+                removeOption.addEventListener('click', () => {
+                  control.options.splice(optionIndex, 1);
+                  render();
+                  updateInput();
+                });
+                heading.appendChild(removeOption);
+                optionEl.appendChild(heading);
 
-        const duplicateBtn = document.createElement('button');
-        duplicateBtn.type = 'button';
-        duplicateBtn.className = 'button';
-        duplicateBtn.textContent = strings.duplicate || 'Dupliquer';
-        duplicateBtn.addEventListener('click', () => {
-          const cloned = cloneControl(control);
-          block.controls.splice(controlIndex + 1, 0, cloned);
-          render();
-          updateInput();
+                // Ligne d'option: id, label, classes
+                const optRow = document.createElement('div');
+                optRow.className = 'up-ge-row';
+
+                const optId = document.createElement('input');
+                optId.type = 'text';
+                optId.className = 'regular-text';
+                optId.value = opt.id || '';
+                optId.addEventListener('input', (e) => {
+                  opt.id = e.target.value;
+                  updateInput();
+                });
+                const optIdCol = document.createElement('div');
+                optIdCol.className = 'up-ge-col';
+                optIdCol.appendChild(createField(strings.optionId || 'Identifiant option', optId));
+                optRow.appendChild(optIdCol);
+
+                const optLabel = document.createElement('input');
+                optLabel.type = 'text';
+                optLabel.className = 'regular-text';
+                optLabel.value = opt.label || '';
+                optLabel.addEventListener('input', (e) => {
+                  opt.label = e.target.value;
+                  updateInput();
+                });
+                const optLabelCol = document.createElement('div');
+                optLabelCol.className = 'up-ge-col';
+                optLabelCol.appendChild(createField(strings.optionLabel || 'Libellé option', optLabel));
+                optRow.appendChild(optLabelCol);
+
+                const optClasses = document.createElement('input');
+                optClasses.type = 'text';
+                optClasses.className = 'regular-text';
+                optClasses.placeholder = 'is-large is-bold';
+                optClasses.value = opt.classes || '';
+                optClasses.addEventListener('input', (e) => {
+                  opt.classes = e.target.value;
+                  updateInput();
+                });
+                const optClassesCol = document.createElement('div');
+                optClassesCol.className = 'up-ge-col';
+                optClassesCol.appendChild(createField(strings.optionClasses || 'Classes option', optClasses));
+                optRow.appendChild(optClassesCol);
+
+                optionEl.appendChild(optRow);
+                optionsWrapper.appendChild(optionEl);
+              });
+
+              const addOptionBtn = document.createElement('button');
+              addOptionBtn.type = 'button';
+              addOptionBtn.className = 'button';
+              addOptionBtn.textContent = strings.optionLabel ? `${strings.optionLabel} +` : 'Ajouter une option';
+              addOptionBtn.addEventListener('click', () => {
+                addOption(control);
+                render();
+                updateInput();
+              });
+              optionsWrapper.appendChild(addOptionBtn);
+
+              controlEl.appendChild(optionsWrapper);
+            }
+
+            const controlActions = document.createElement('div');
+            controlActions.className = 'up-ge-actions';
+
+            const duplicateBtn = document.createElement('button');
+            duplicateBtn.type = 'button';
+            duplicateBtn.className = 'button';
+            duplicateBtn.textContent = strings.duplicate || 'Dupliquer';
+            duplicateBtn.addEventListener('click', () => {
+              const cloned = cloneControl(control);
+              block.controls.splice(controlIndex + 1, 0, cloned);
+              render();
+              updateInput();
+            });
+            controlActions.appendChild(duplicateBtn);
+
+            const collapseBtn = document.createElement('button');
+            collapseBtn.type = 'button';
+            collapseBtn.className = 'button';
+            collapseBtn.textContent = 'Retour aperçu';
+            collapseBtn.addEventListener('click', () => {
+              control._collapsed = true;
+              render();
+            });
+            controlActions.appendChild(collapseBtn);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'button button-link-delete';
+            removeBtn.textContent = strings.remove || 'Supprimer';
+            removeBtn.addEventListener('click', () => {
+              block.controls.splice(controlIndex, 1);
+              render();
+              updateInput();
+            });
+            controlActions.appendChild(removeBtn);
+
+            controlEl.appendChild(controlActions);
+          }
+
+          panelEl.appendChild(controlEl);
         });
-        controlActions.appendChild(duplicateBtn);
 
-        const removeBtn = document.createElement('button');
-        removeBtn.type = 'button';
-        removeBtn.className = 'button button-link-delete';
-        removeBtn.textContent = strings.remove || 'Supprimer';
-        removeBtn.addEventListener('click', () => {
-          block.controls.splice(controlIndex, 1);
-          render();
-          updateInput();
-        });
-        controlActions.appendChild(removeBtn);
-
-        controlEl.appendChild(controlActions);
-        controlsWrapper.appendChild(controlEl);
+        controlsWrapper.appendChild(panelEl);
       });
 
       const addControlBtn = document.createElement('button');

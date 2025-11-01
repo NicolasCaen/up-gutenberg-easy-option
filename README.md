@@ -99,6 +99,13 @@ add_filter('up_block_switches', function($switches) {
 
 ## Changelog
 
+### 0.3.1 (2025-11-01)
+- Interface d’administration: aperçu groupé par panneau (badges de type, chips de classes, bouton Éditer).
+- Édition: champ `Panneau` en premier avec aide; libellés renommés (« Identifiant de l'input », « Label de l'input »).
+- Mise en page: champs principaux alignés (Type / ID / Label) et options `select/preset` sur une seule ligne (ID / Label / Classes).
+- Configuration: support des blocs multiples via noms séparés par des virgules.
+- Import: fusion avec la configuration existante sans duplication (mêmes `id` mis à jour).
+
 ### 0.3.0 (2025-11-01)
 - Interface d’administration (gestion graphique, import/export JSON).
 - Ajout des presets/bundles (type `preset`) et support de classes multiples.
