@@ -86,7 +86,19 @@ class Up_Block_Switches {
             }
 
             if ($clean) {
-                $normalized[$blockKey] = $clean;
+                // Autoriser la liste de blocs séparés par virgules
+                $targets = preg_split('/\s*,\s*/', $blockKey);
+                if (!is_array($targets) || !$targets) {
+                    $targets = [$blockKey];
+                }
+                foreach ($targets as $target) {
+                    if ($target === '') { continue; }
+                    if (!isset($normalized[$target])) {
+                        $normalized[$target] = [];
+                    }
+                    // concaténer en préservant l'ordre
+                    $normalized[$target] = array_merge($normalized[$target], $clean);
+                }
             }
         }
 
