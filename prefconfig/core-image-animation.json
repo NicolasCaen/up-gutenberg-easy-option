@@ -1,0 +1,51 @@
+{
+    "blocks": [
+        "core/image"
+    ],
+    "panel": "Animation",
+    "controls": [
+        {
+            "id": "animation",
+            "label": "Animation",
+            "type": "select",
+            "panel": "Animation",
+            "options": [
+                {
+                    "id": "rounded20",
+                    "label": "Rounded 20",
+                    "classes": [
+                        "is-rounded20",
+                        "light",
+                        "edges"
+                    ]
+                },
+                {
+                    "id": "rounded30",
+                    "label": "rounded30",
+                    "classes": [
+                        "is-rounded30",
+                        "darker"
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "animation_toggle",
+            "label": "Animation",
+            "type": "toggle",
+            "panel": "Animation",
+            "classes": [
+                "is-animation"
+            ]
+        },
+        {
+            "id": "test",
+            "label": "test",
+            "type": "toggle",
+            "panel": "Animation",
+            "classes": [
+                "test"
+            ]
+        }
+    ]
+}

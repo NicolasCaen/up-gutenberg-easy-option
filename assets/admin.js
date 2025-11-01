@@ -1,6 +1,7 @@
 (function () {
   const data = window.UPGEAdminData || {};
   const strings = data.strings || {};
+  const ajax = data.ajax || {};
   const app = document.getElementById('up-ge-admin-app');
   const input = document.getElementById('up-ge-config-input');
 
@@ -103,6 +104,76 @@
     });
   }
 
+  function sanitizeControl(control) {
+    const type = control.type || 'toggle';
+    const controlId = (control.id || '').trim();
+    const controlLabel = (control.label || '').trim();
+    if (!controlId || !controlLabel) {
+      return null;
+    }
+
+    const result = {
+      id: controlId,
+      label: controlLabel,
+      type,
+    };
+
+    if (control.panel && control.panel.trim()) {
+      result.panel = control.panel.trim();
+    }
+
+    if (control.description && control.description.trim()) {
+      result.description = control.description.trim();
+    }
+
+    if (type === 'toggle') {
+      const classes = stringToArray(control.classes);
+      if (!classes.length) {
+        return null;
+      }
+      result.classes = classes;
+    } else {
+      const options = [];
+      (control.options || []).forEach((opt) => {
+        const optId = (opt.id || '').trim();
+        const optLabel = (opt.label || '').trim();
+        const optClasses = stringToArray(opt.classes);
+        if (optId && optLabel && optClasses.length) {
+          options.push({ id: optId, label: optLabel, classes: optClasses });
+        }
+      });
+      if (!options.length) {
+        return null;
+      }
+      result.options = options;
+    }
+
+    return result;
+  }
+
+  function collectBlockControls(block, targetPanel) {
+    ensureControlsArray(block);
+    const controls = [];
+    const panelKey = (value) => {
+      const name = (value || '').trim();
+      return name ? name : 'Options UP';
+    };
+
+    block.controls.forEach((control) => {
+      const sanitized = sanitizeControl(control);
+      if (!sanitized) {
+        return;
+      }
+      const currentPanel = panelKey(control.panel);
+      if (targetPanel && currentPanel !== targetPanel) {
+        return;
+      }
+      controls.push(sanitized);
+    });
+
+    return controls;
+  }
+
   function updateInput() {
     const output = {};
 
@@ -112,55 +183,7 @@
         return;
       }
 
-      ensureControlsArray(block);
-      const controls = [];
-
-      block.controls.forEach((control) => {
-        const controlId = (control.id || '').trim();
-        const controlLabel = (control.label || '').trim();
-        const type = control.type || 'toggle';
-
-        if (!controlId || !controlLabel) {
-          return;
-        }
-
-        const base = {
-          id: controlId,
-          label: controlLabel,
-          type,
-        };
-
-        if (control.panel && control.panel.trim()) {
-          base.panel = control.panel.trim();
-        }
-        if (control.description && control.description.trim()) {
-          base.description = control.description.trim();
-        }
-
-        if (type === 'toggle') {
-          const classes = stringToArray(control.classes);
-          if (!classes.length) {
-            return;
-          }
-          base.classes = classes;
-        } else {
-          const options = [];
-          (control.options || []).forEach((opt) => {
-            const optId = (opt.id || '').trim();
-            const optLabel = (opt.label || '').trim();
-            const optClasses = stringToArray(opt.classes);
-            if (optId && optLabel && optClasses.length) {
-              options.push({ id: optId, label: optLabel, classes: optClasses });
-            }
-          });
-          if (!options.length) {
-            return;
-          }
-          base.options = options;
-        }
-
-        controls.push(base);
-      });
+      const controls = collectBlockControls(block);
 
       if (controls.length) {
         output[blockName] = controls;
@@ -277,6 +300,63 @@
         title.textContent = `${panelName} – Blocs: ${block.name || ''}`;
         header.appendChild(title);
 
+        const actionsWrap = document.createElement('div');
+        actionsWrap.className = 'up-ge-actions';
+
+        const savePanelBtn = document.createElement('button');
+        savePanelBtn.type = 'button';
+        savePanelBtn.className = 'button button-secondary';
+        savePanelBtn.textContent = strings.savePanel || 'Enregistrer le panneau comme préconfig';
+        savePanelBtn.addEventListener('click', () => {
+          if (!ajax.url || !ajax.nonce) {
+            window.alert(strings.panelSaveError || 'Erreur AJAX.');
+            return;
+          }
+
+          const blockName = (block.name || '').trim();
+          if (!blockName) {
+            window.alert(strings.panelSaveError || 'Erreur AJAX.');
+            return;
+          }
+
+          const sanitizedControls = collectBlockControls(block, panelName);
+          if (!sanitizedControls.length) {
+            window.alert(strings.panelSaveError || 'Erreur AJAX.');
+            return;
+          }
+
+          const formData = new FormData();
+          formData.append('action', 'up_ge_save_panel_preset');
+          formData.append('nonce', ajax.nonce);
+          formData.append('block', block.name || '');
+          formData.append('panel', panelName);
+          formData.append('controls', JSON.stringify(sanitizedControls));
+
+          const originalText = savePanelBtn.textContent;
+          savePanelBtn.disabled = true;
+          savePanelBtn.textContent = strings.savingPanel || 'Enregistrement…';
+
+          fetch(ajax.url, { method: 'POST', body: formData })
+            .then((response) => response.json())
+            .then((json) => {
+              if (json && json.success) {
+                savePanelBtn.textContent = strings.panelSaved || 'Préconfiguration enregistrée.';
+                setTimeout(() => {
+                  savePanelBtn.disabled = false;
+                  savePanelBtn.textContent = originalText;
+                }, 2000);
+              } else {
+                throw new Error((json && json.data && json.data.message) || 'error');
+              }
+            })
+            .catch(() => {
+              savePanelBtn.disabled = false;
+              savePanelBtn.textContent = originalText;
+              window.alert(strings.panelSaveError || 'Impossible d’enregistrer la préconfiguration.');
+            });
+        });
+        actionsWrap.appendChild(savePanelBtn);
+
         const editAll = document.createElement('button');
         editAll.type = 'button';
         editAll.className = 'button';
@@ -285,7 +365,9 @@
           panels[panelName].forEach(({ control }) => control._collapsed = false);
           render();
         });
-        header.appendChild(editAll);
+        actionsWrap.appendChild(editAll);
+
+        header.appendChild(actionsWrap);
         panelEl.appendChild(header);
 
         panels[panelName].forEach(({ control, controlIndex }) => {

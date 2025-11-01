@@ -83,10 +83,17 @@ add_filter('up_block_switches', function($switches) {
 - Ajoutez vos blocs, contrôles (toggle/select/preset) et classes via l’interface.
 - Possibilité de dupliquer/supprimer des contrôles, d’ajouter des options multiples et de réordonner manuellement.
 - La configuration est sauvegardée dans les options WordPress et fusionnée avec le filtre `up_block_switches`.
+- Enregistrez un panneau comme préconfiguration via le bouton **Enregistrer le panneau comme préconfig**.
 
 ### Import / Export
 - Export: génère un fichier JSON de la configuration actuelle.
 - Import: téléversez un JSON exporté; les blocs/contrôles sont fusionnés avec la configuration existante (mêmes `id` remplacés, nouveaux ajoutés) sans duplication.
+
+### Préconfigurations (presets)
+- Les préconfigurations sont stockées dans `plugins/up-gutenberg-easy-option/prefconfig/` sous forme de fichiers JSON (`bloc-panel.json`).
+- Chaque fichier contient les blocs ciblés, le panneau et les contrôles associés. Les noms de fichiers sont générés en minuscules sans espaces.
+- Depuis **Réglages > UP Gutenberg Préconfigurations**, prévisualisez le JSON, importez un preset (fusion automatique avec la config courante) ou exportez-en un nouveau.
+- L’enregistrement d’un panneau crée/écrase le fichier correspondant; l’import depuis la page préconfigurations met à jour la configuration active comme un import global.
 
 ## Bonnes pratiques
 - Préfixez vos classes (ex: `is-...`) pour éviter les collisions.
@@ -103,6 +110,7 @@ add_filter('up_block_switches', function($switches) {
 - Interface d’administration: aperçu groupé par panneau (badges de type, chips de classes, bouton Éditer).
 - Édition: champ `Panneau` en premier avec aide; libellés renommés (« Identifiant de l'input », « Label de l'input »).
 - Mise en page: champs principaux alignés (Type / ID / Label) et options `select/preset` sur une seule ligne (ID / Label / Classes).
+- Préconfigurations: bouton **Enregistrer le panneau** (création JSON) + page dédiée listant/aperçus/imports depuis `prefconfig/`.
 - Configuration: support des blocs multiples via noms séparés par des virgules.
 - Import: fusion avec la configuration existante sans duplication (mêmes `id` mis à jour).
 
