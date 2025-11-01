@@ -402,7 +402,10 @@ class Up_Block_Switches {
         }
 
         $normalized = $this->normalize_switches($decoded);
-        update_option(self::OPTION_KEY, $normalized);
+        $existing = $this->get_option_blocks();
+        $merged = $this->merge_configs($existing, $normalized);
+
+        update_option(self::OPTION_KEY, $merged);
 
         wp_safe_redirect($this->get_save_url('imported'));
         exit;

@@ -86,7 +86,7 @@ add_filter('up_block_switches', function($switches) {
 
 ### Import / Export
 - Export: génère un fichier JSON de la configuration actuelle.
-- Import: téléversez un JSON exporté (import complet, remplace la config stockée).
+- Import: téléversez un JSON exporté; les blocs/contrôles sont fusionnés avec la configuration existante (mêmes `id` remplacés, nouveaux ajoutés) sans duplication.
 
 ## Bonnes pratiques
 - Préfixez vos classes (ex: `is-...`) pour éviter les collisions.
