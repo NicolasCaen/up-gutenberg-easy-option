@@ -174,6 +174,60 @@
     return controls;
   }
 
+  // Clipboard pour copier/coller un contrôle entre panneaux
+  let clipboardControl = null;
+
+  function copyControl(control) {
+    const sanitized = sanitizeControl(control);
+    if (!sanitized) return false;
+    clipboardControl = sanitized;
+    return true;
+  }
+
+  function toEditableControl(sanitized) {
+    // Convertit un contrôle "sanitized" (classes en array) au format éditable (classes en string)
+    const base = {
+      type: sanitized.type || 'toggle',
+      id: sanitized.id || '',
+      label: sanitized.label || '',
+      panel: sanitized.panel || '',
+      description: sanitized.description || '',
+      classes: '',
+      options: [],
+      _collapsed: false,
+    };
+    if (base.type === 'toggle') {
+      base.classes = arrayToString(sanitized.classes || []);
+    } else {
+      base.options = (sanitized.options || []).map((opt) => ({
+        id: opt.id || '',
+        label: opt.label || '',
+        classes: arrayToString(opt.classes || []),
+      }));
+    }
+    return base;
+  }
+
+  function ensureUniqueId(block, desiredId) {
+    const existing = new Set((block.controls || []).map((c) => (c.id || '').trim()).filter(Boolean));
+    if (!existing.has(desiredId)) return desiredId;
+    let i = 2;
+    while (existing.has(`${desiredId}-copy${i}`)) i++;
+    return existing.has(`${desiredId}-copy`) ? `${desiredId}-copy${i}` : `${desiredId}-copy`;
+  }
+
+  function pasteControlIntoPanel(block, panelName) {
+    if (!clipboardControl) return false;
+    ensureControlsArray(block);
+    const editable = toEditableControl(clipboardControl);
+    editable.panel = panelName || editable.panel || '';
+    // Assurer un id unique dans ce bloc
+    const desiredId = (editable.id || '').trim() || 'control';
+    editable.id = ensureUniqueId(block, desiredId);
+    block.controls.push(editable);
+    return true;
+  }
+
   function updateInput() {
     const output = {};
 
@@ -357,6 +411,21 @@
         });
         actionsWrap.appendChild(savePanelBtn);
 
+        const pasteBtn = document.createElement('button');
+        pasteBtn.type = 'button';
+        pasteBtn.className = 'button';
+        pasteBtn.textContent = 'Coller dans le panneau';
+        pasteBtn.disabled = !clipboardControl;
+        pasteBtn.addEventListener('click', () => {
+          if (!clipboardControl) return;
+          const ok = pasteControlIntoPanel(block, panelName);
+          if (ok) {
+            render();
+            updateInput();
+          }
+        });
+        actionsWrap.appendChild(pasteBtn);
+
         const editAll = document.createElement('button');
         editAll.type = 'button';
         editAll.className = 'button';
@@ -423,6 +492,17 @@
               render();
             });
             actions.appendChild(editBtn);
+
+            const copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'button';
+            copyBtn.textContent = 'Copier';
+            copyBtn.addEventListener('click', () => {
+              if (copyControl(control)) {
+                render(); // met à jour l'état du bouton "Coller"
+              }
+            });
+            actions.appendChild(copyBtn);
             controlEl.appendChild(summary);
             controlEl.appendChild(actions);
           } else {
@@ -620,6 +700,16 @@
               updateInput();
             });
             controlActions.appendChild(duplicateBtn);
+
+            const copyBtn2 = document.createElement('button');
+            copyBtn2.type = 'button';
+            copyBtn2.className = 'button';
+            copyBtn2.textContent = 'Copier';
+            copyBtn2.addEventListener('click', () => {
+              copyControl(control);
+              render();
+            });
+            controlActions.appendChild(copyBtn2);
 
             const collapseBtn = document.createElement('button');
             collapseBtn.type = 'button';

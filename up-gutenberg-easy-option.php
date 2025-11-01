@@ -2,7 +2,7 @@
 /**
  * Plugin Name: UP gutenberg easy option
  * Description: Ajoute des switches configurables aux blocs Gutenberg pour ajouter/retirer des classes via l’inspecteur. Configurable via un filtre et exposé via l’API REST.
- * Version: 0.3.1
+ * Version: 0.4.0
  * Author: GEHIN Nicolas
  */
 

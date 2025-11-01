@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 - 2025-11-01
+- Menu dédié « UP Gutenberg » avec sous-pages « Configuration » et « Préconfigurations ».
+- Page top-level transformée en Dashboard (raccourcis, compteurs, bonnes pratiques).
+- Page « Préconfigurations »: listing des JSON dans `prefconfig/`, aperçu, import (fusion), enregistrement de panneaux en presets (fichiers en minuscules sans espaces).
+- Admin UI: copier/coller de contrôles entre panneaux, panneau en premier, champs alignés (Type/ID/Label), options `select/preset` sur une ligne.
+- Import JSON: fusionne toujours avec l’existant (sans duplication; mêmes `id` mis à jour).
+- Multi-blocs: support des noms de blocs séparés par virgules.
+- Correctifs: callbacks admin, redirections `admin.php`, enqueues par page, méthodes manquantes.
+
 ## 0.3.1 - 2025-11-01
 - Admin UI: vue “aperçu d’abord” groupée par panneau (badges types, chips de classes, bouton Éditer).
 - Édition: champ Panneau en premier avec aide; libellés renommés (“Identifiant de l'input”, “Label de l'input”).

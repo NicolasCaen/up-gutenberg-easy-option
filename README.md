@@ -106,6 +106,14 @@ add_filter('up_block_switches', function($switches) {
 
 ## Changelog
 
+### 0.4.0 (2025-11-01)
+- Menu dédié « UP Gutenberg » avec sous-pages « Configuration » et « Préconfigurations ».
+- Dashboard sur la page top-level avec raccourcis, compteurs et bonnes pratiques.
+- Page « Préconfigurations »: liste des JSON dans `prefconfig/`, aperçu, import (fusion), enregistrement de panneaux en presets.
+- Admin UI: copier/coller de contrôles entre panneaux, panneau en premier, champs alignés (Type / ID / Label), options `select/preset` sur une ligne.
+- Import: fusion avec la configuration existante sans duplication (mêmes `id` mis à jour).
+- Multi-blocs: support des noms de blocs séparés par virgules.
+
 ### 0.3.1 (2025-11-01)
 - Interface d’administration: aperçu groupé par panneau (badges de type, chips de classes, bouton Éditer).
 - Édition: champ `Panneau` en premier avec aide; libellés renommés (« Identifiant de l'input », « Label de l'input »).
