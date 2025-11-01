@@ -2,7 +2,7 @@
 /**
  * Plugin Name: UP gutenberg easy option
  * Description: Ajoute des switches configurables aux blocs Gutenberg pour ajouter/retirer des classes via l’inspecteur. Configurable via un filtre et exposé via l’API REST.
- * Version: 0.1.0
+ * Version: 0.2.0
  * Author: GEHIN Nicolas
  */
 
@@ -52,8 +52,20 @@ class Up_Block_Switches {
      * Structure attendue du filtre `up_block_switches`:
      * [
      *   'core/paragraph' => [
-     *      [ 'id' => 'big', 'label' => 'Grand', 'class' => 'is-big' ],
-     *      [ 'id' => 'highlight', 'label' => 'Surbrillance', 'class' => 'is-highlight' ],
+     *      // Toggle (compatibilité existante)
+     *      [ 'id' => 'big', 'label' => 'Grand', 'class' => 'is-big', 'panel' => 'Apparence' ],
+     *      // Select (options exclusives)
+     *      [
+     *        'type' => 'select',
+     *        'id' => 'taille',
+     *        'label' => 'Taille',
+     *        'panel' => 'Apparence',
+     *        'options' => [
+     *           [ 'id' => 'sm', 'label' => 'Petite', 'class' => 'is-sm' ],
+     *           [ 'id' => 'md', 'label' => 'Moyenne', 'class' => 'is-md' ],
+     *           [ 'id' => 'lg', 'label' => 'Grande', 'class' => 'is-lg' ],
+     *        ]
+     *      ],
      *   ],
      *   'namespace/block' => [ ... ]
      * ]
@@ -75,11 +87,45 @@ class Up_Block_Switches {
             $clean = [];
             foreach ($defs as $d) {
                 if (!is_array($d)) { continue; }
+
+                // Champs communs
                 $id = isset($d['id']) ? sanitize_key($d['id']) : '';
                 $label = isset($d['label']) ? sanitize_text_field($d['label']) : '';
-                $class = isset($d['class']) ? sanitize_html_class($d['class']) : '';
-                if ($id && $label && $class) {
-                    $clean[] = [ 'id' => $id, 'label' => $label, 'class' => $class ];
+                $panel = isset($d['panel']) ? sanitize_text_field($d['panel']) : '';
+                $type = isset($d['type']) ? sanitize_key($d['type']) : 'toggle';
+
+                if ($type === 'select') {
+                    // Contrôle de type select avec options exclusives
+                    $options = [];
+                    if (isset($d['options']) && is_array($d['options'])) {
+                        foreach ($d['options'] as $opt) {
+                            if (!is_array($opt)) { continue; }
+                            $opt_id = isset($opt['id']) ? sanitize_key($opt['id']) : '';
+                            $opt_label = isset($opt['label']) ? sanitize_text_field($opt['label']) : '';
+                            $opt_class = isset($opt['class']) ? sanitize_html_class($opt['class']) : '';
+                            if ($opt_id && $opt_label && $opt_class) {
+                                $options[] = [ 'id' => $opt_id, 'label' => $opt_label, 'class' => $opt_class ];
+                            }
+                        }
+                    }
+                    if ($id && $label && !empty($options)) {
+                        $entry = [
+                            'type' => 'select',
+                            'id' => $id,
+                            'label' => $label,
+                            'options' => $options,
+                        ];
+                        if ($panel) { $entry['panel'] = $panel; }
+                        $clean[] = $entry;
+                    }
+                } else {
+                    // Par défaut: toggle (compatibilité)
+                    $class = isset($d['class']) ? sanitize_html_class($d['class']) : '';
+                    if ($id && $label && $class) {
+                        $entry = [ 'type' => 'toggle', 'id' => $id, 'label' => $label, 'class' => $class ];
+                        if ($panel) { $entry['panel'] = $panel; }
+                        $clean[] = $entry;
+                    }
                 }
             }
             if ($clean) {
