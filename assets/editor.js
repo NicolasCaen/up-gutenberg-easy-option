@@ -30,23 +30,52 @@
 
   fetchSwitches();
 
-  function ensureClass(className, klass, enabled) {
-    const list = (className || '').split(/\s+/).filter(Boolean);
-    const has = list.includes(klass);
-    if (enabled && !has) list.push(klass);
-    if (!enabled && has) {
-      const idx = list.indexOf(klass);
-      if (idx > -1) list.splice(idx, 1);
+  function toClassArray(input, fallback) {
+    if (Array.isArray(input)) {
+      return input.filter(Boolean);
+    }
+    if (typeof input === 'string') {
+      return input
+        .split(/\s+/)
+        .map((c) => c.trim())
+        .filter(Boolean);
+    }
+    if (Array.isArray(fallback) || typeof fallback === 'string') {
+      return toClassArray(fallback);
+    }
+    return [];
+  }
+
+  function ensureClasses(className, classes, enabled) {
+    let list = (className || '').split(/\s+/).filter(Boolean);
+    const cls = toClassArray(classes);
+    if (!cls.length) {
+      return list.join(' ');
+    }
+    if (enabled) {
+      cls.forEach((c) => {
+        if (!list.includes(c)) {
+          list.push(c);
+        }
+      });
+    } else {
+      list = list.filter((c) => !cls.includes(c));
     }
     return list.join(' ');
   }
 
-  // Pour les selects: retirer toutes les classes candidates et ajouter la choisie
-  function replaceClassesExclusive(className, optionClasses, chosenClass) {
+  // Pour les selects/presets: retirer toutes les classes candidates puis ajouter celles du choix
+  function replaceClassesExclusive(className, optionsClasses, chosenClasses) {
     let list = (className || '').split(/\s+/).filter(Boolean);
-    const removeSet = new Set(optionClasses);
+    const removeSet = new Set();
+    optionsClasses.forEach((cls) => toClassArray(cls).forEach((c) => removeSet.add(c)));
     list = list.filter((c) => !removeSet.has(c));
-    if (chosenClass) list.push(chosenClass);
+    const chosen = toClassArray(chosenClasses);
+    chosen.forEach((c) => {
+      if (!list.includes(c)) {
+        list.push(c);
+      }
+    });
     return list.join(' ');
   }
 
@@ -100,13 +129,17 @@
                   PanelBody,
                   { title: panelTitle, initialOpen: true, key: panelTitle },
                   items.map((sw) => {
-                    if (sw.type === 'select' && Array.isArray(sw.options)) {
-                      const optionClasses = sw.options.map((o) => o.class);
-                      const current = className
-                        .split(/\s+/)
-                        .filter(Boolean)
-                        .find((c) => optionClasses.includes(c));
-                      const value = (sw.options.find((o) => o.class === current) || {}).id || '';
+                    if ((sw.type === 'select' || sw.type === 'preset') && Array.isArray(sw.options)) {
+                      const optionsClasses = sw.options.map((o) => toClassArray(o.classes || o.class));
+                      const currentClasses = className.split(/\s+/).filter(Boolean);
+                      const activeOption = sw.options.find((option, idx) => {
+                        const optionClasses = optionsClasses[idx];
+                        if (!optionClasses.length) {
+                          return false;
+                        }
+                        return optionClasses.every((cls) => currentClasses.includes(cls));
+                      });
+                      const value = activeOption ? activeOption.id : '';
                       const selectOptions = [
                         { label: '—', value: '' },
                         ...sw.options.map((o) => ({ label: o.label || o.id, value: o.id })),
@@ -114,23 +147,28 @@
                       return wp.element.createElement(SelectControl, {
                         key: sw.id,
                         label: sw.label || sw.id,
+                        help: sw.description || undefined,
                         value,
                         options: selectOptions,
                         onChange: (val) => {
-                          const chosen = sw.options.find((o) => o.id === val);
-                          const newClassName = replaceClassesExclusive(className, optionClasses, chosen ? chosen.class : '');
+                          const index = sw.options.findIndex((o) => o.id === val);
+                          const selectedClasses = index > -1 ? optionsClasses[index] : [];
+                          const newClassName = replaceClassesExclusive(className, optionsClasses, selectedClasses);
                           setAttributes({ className: newClassName || undefined });
                         },
                       });
                     }
-                    // toggle par défaut
-                    const enabled = className.split(/\s+/).filter(Boolean).includes(sw.class);
+
+                    const toggleClasses = toClassArray(sw.classes || sw.class);
+                    const currentClasses = className.split(/\s+/).filter(Boolean);
+                    const enabled = toggleClasses.every((cls) => currentClasses.includes(cls));
                     return wp.element.createElement(ToggleControl, {
                       key: sw.id,
                       label: sw.label || sw.id,
+                      help: sw.description || undefined,
                       checked: enabled,
                       onChange: (val) => {
-                        const updated = ensureClass(className, sw.class, val);
+                        const updated = ensureClasses(className, toggleClasses, val);
                         setAttributes({ className: updated || undefined });
                       },
                     });
