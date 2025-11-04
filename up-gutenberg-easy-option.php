@@ -2,7 +2,7 @@
 /**
  * Plugin Name: UP gutenberg easy option
  * Description: Ajoute des switches configurables aux blocs Gutenberg pour ajouter/retirer des classes via l’inspecteur. Configurable via un filtre et exposé via l’API REST.
- * Version: 0.4.0
+ * Version: 0.5.0
  * Author: GEHIN Nicolas
  */
 
@@ -238,6 +238,15 @@ class Up_Block_Switches {
             ];
         }
 
+        // Extra static classes applied unconditionally
+        $extraRaw = $control['extra'] ?? ($control['extraClasses'] ?? null);
+        if ($extraRaw !== null) {
+            $extra = $this->normalize_classes($extraRaw);
+            if ($extra) {
+                $normalized['extra'] = $extra;
+            }
+        }
+
         if ($panel) {
             $normalized['panel'] = $panel;
         }
@@ -262,6 +271,7 @@ class Up_Block_Switches {
                 }
             }
         } elseif (is_string($classes)) {
+            $classes = str_replace(',', ' ', $classes);
             $parts = preg_split('/\s+/', trim($classes));
             if (is_array($parts)) {
                 foreach ($parts as $part) {
@@ -274,6 +284,7 @@ class Up_Block_Switches {
         }
 
         if (!$list && is_string($fallback)) {
+            $fallback = str_replace(',', ' ', $fallback);
             $parts = preg_split('/\s+/', trim($fallback));
             if (is_array($parts)) {
                 foreach ($parts as $part) {
@@ -428,6 +439,7 @@ class Up_Block_Switches {
                     'maxValue' => __('Valeur max', 'up'),
                     'stepValue' => __('Pas', 'up'),
                     'defaultValue' => __('Valeur par défaut', 'up'),
+                    'extraClasses' => __('Classes supplémentaires', 'up'),
                     'palette' => __('Palette', 'up'),
                     'paletteSource' => __('Source', 'up'),
                     'paletteColors' => __('Couleurs', 'up'),

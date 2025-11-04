@@ -59,6 +59,7 @@
       return [];
     }
     return value
+      .replace(/,/g, ' ')
       .split(/\s+/)
       .map((cls) => cls.trim())
       .filter(Boolean);
@@ -100,6 +101,7 @@
       classes: arrayToString(ctrl.classes || ctrl.class || ''),
       class: typeof ctrl.class === 'string' ? ctrl.class : '',
       source: typeof ctrl.source === 'string' ? ctrl.source : '',
+      extra: arrayToString(ctrl.extra || ''),
       min: toNumberString(ctrl.min),
       max: toNumberString(ctrl.max),
       step: toNumberString(ctrl.step),
@@ -127,9 +129,13 @@
       block.controls = [];
     }
     block.controls.forEach((control) => {
-      if (!Array.isArray(control.options)) {
-        control.options = [];
-      }
+      if (!control || typeof control !== 'object') return;
+      control.type = control.type || 'toggle';
+      control.id = control.id || '';
+      control.label = control.label || '';
+      control.panel = control.panel || '';
+      control.description = control.description || '';
+      control.extra = arrayToString(control.extra || '');
       if (typeof control._collapsed !== 'boolean') {
         control._collapsed = true;
       }
@@ -243,6 +249,12 @@
       result.options = options;
     }
 
+    // Extra classes for all types (applied unconditionally in editor)
+    const extraArr = stringToArray(control.extra || '');
+    if (extraArr.length) {
+      result.extra = extraArr;
+    }
+
     return result;
   }
 
@@ -290,6 +302,7 @@
       classes: '',
       options: [],
       class: sanitized.class || '',
+      extra: arrayToString(sanitized.extra || ''),
       min: toNumberString(sanitized.min),
       max: toNumberString(sanitized.max),
       step: toNumberString(sanitized.step),
@@ -375,6 +388,7 @@
       classes: '',
       class: '',
       source: '',
+      extra: '',
       min: '',
       max: '',
       step: '',
@@ -706,6 +720,18 @@
               updateInput();
             });
             controlEl.appendChild(createField(strings.description || 'Description', descInput));
+
+            // Extra classes (applied unconditionally)
+            const extraInput = document.createElement('input');
+            extraInput.type = 'text';
+            extraInput.className = 'regular-text';
+            extraInput.placeholder = 'has-color-bg-test';
+            extraInput.value = control.extra || '';
+            extraInput.addEventListener('input', (e) => {
+              control.extra = e.target.value;
+              updateInput();
+            });
+            controlEl.appendChild(createField(strings.extraClasses || 'Classes supplémentaires', extraInput));
 
             if (control.type === 'toggle') {
               const classesInput = document.createElement('input');

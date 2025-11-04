@@ -130,6 +130,7 @@
                   { title: panelTitle, initialOpen: true, key: panelTitle },
                   items.map((sw) => {
                     if (sw.type === 'palette' && sw.class && sw.source) {
+                      const extra = toClassArray(sw.extra);
                       // If backend provided options, use them directly (most robust)
                       if (Array.isArray(sw.options) && sw.options.length) {
                         const optionsClasses = sw.options.map((o) => toClassArray(o.classes || o.class));
@@ -153,7 +154,8 @@
                             const index = sw.options.findIndex((o) => o.id === val);
                             const selectedClasses = index > -1 ? optionsClasses[index] : [];
                             const newClassName = replaceClassesExclusive(className, optionsClasses, selectedClasses);
-                            setAttributes({ className: newClassName || undefined });
+                            const withExtra = val ? ensureClasses(newClassName, extra, true) : ensureClasses(newClassName, extra, false);
+                            setAttributes({ className: withExtra || undefined });
                           },
                         });
                       }
@@ -232,12 +234,14 @@
                           const idx = opts.findIndex((t) => t.slug === val);
                           const selectedClasses = idx > -1 ? optionsClasses[idx] : [];
                           const newClassName = replaceClassesExclusive(className, optionsClasses, selectedClasses);
-                          setAttributes({ className: newClassName || undefined });
+                          const withExtra = val ? ensureClasses(newClassName, extra, true) : ensureClasses(newClassName, extra, false);
+                          setAttributes({ className: withExtra || undefined });
                         },
                       });
                     }
                     if ((sw.type === 'select' || sw.type === 'preset') && Array.isArray(sw.options)) {
                       const optionsClasses = sw.options.map((o) => toClassArray(o.classes || o.class));
+                      const extra = toClassArray(sw.extra);
                       const currentClasses = className.split(/\s+/).filter(Boolean);
                       const activeOption = sw.options.find((option, idx) => {
                         const optionClasses = optionsClasses[idx];
@@ -261,7 +265,8 @@
                           const index = sw.options.findIndex((o) => o.id === val);
                           const selectedClasses = index > -1 ? optionsClasses[index] : [];
                           const newClassName = replaceClassesExclusive(className, optionsClasses, selectedClasses);
-                          setAttributes({ className: newClassName || undefined });
+                          const withExtra = val ? ensureClasses(newClassName, extra, true) : ensureClasses(newClassName, extra, false);
+                          setAttributes({ className: withExtra || undefined });
                         },
                       });
                     } else if (sw.type === 'number' && sw.class) {
@@ -269,6 +274,7 @@
                       const parts = className.split(/\s+/).filter(Boolean);
                       const currentToken = parts.find((t) => t.indexOf(prefix + '-') === 0);
                       const currentValue = currentToken ? currentToken.slice(prefix.length + 1) : '';
+                      const extra = toClassArray(sw.extra);
 
                       const clamp = (val) => {
                         const n = Number(val);
@@ -308,12 +314,15 @@
                         ...inputProps,
                         onChange: (val) => {
                           const newClassName = toNewClassName(val);
-                          setAttributes({ className: newClassName || undefined });
+                          const has = String(val).trim() !== '';
+                          const withExtra = has ? ensureClasses(newClassName, extra, true) : ensureClasses(newClassName, extra, false);
+                          setAttributes({ className: withExtra || undefined });
                         },
                       });
                     }
 
                     const toggleClasses = toClassArray(sw.classes || sw.class);
+                    const extra = toClassArray(sw.extra);
                     const currentClasses = className.split(/\s+/).filter(Boolean);
                     const enabled = toggleClasses.every((cls) => currentClasses.includes(cls));
                     return wp.element.createElement(ToggleControl, {
@@ -322,7 +331,8 @@
                       help: sw.description || undefined,
                       checked: enabled,
                       onChange: (val) => {
-                        const updated = ensureClasses(className, toggleClasses, val);
+                        let updated = ensureClasses(className, toggleClasses, val);
+                        updated = ensureClasses(updated, extra, val);
                         setAttributes({ className: updated || undefined });
                       },
                     });
