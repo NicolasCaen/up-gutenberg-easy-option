@@ -99,6 +99,7 @@
       description: ctrl.description || '',
       classes: arrayToString(ctrl.classes || ctrl.class || ''),
       class: typeof ctrl.class === 'string' ? ctrl.class : '',
+      source: typeof ctrl.source === 'string' ? ctrl.source : '',
       min: toNumberString(ctrl.min),
       max: toNumberString(ctrl.max),
       step: toNumberString(ctrl.step),
@@ -138,6 +139,9 @@
         control.max = toNumberString(control.max);
         control.step = toNumberString(control.step);
         control.default = toNumberString(control.default);
+      } else if (control.type === 'palette') {
+        control.class = typeof control.class === 'string' ? control.class : '';
+        control.source = typeof control.source === 'string' ? control.source : '';
       }
     });
   }
@@ -170,6 +174,15 @@
         return null;
       }
       result.classes = classes;
+    } else if (type === 'palette') {
+      const classPrefix = (control.class || '').trim();
+      const source = (control.source || '').trim();
+      if (!classPrefix || !source) {
+        return null;
+      }
+      result.type = 'palette';
+      result.class = classPrefix;
+      result.source = source;
     } else if (type === 'number') {
       const classPrefix = (control.class || '').trim();
       if (!classPrefix) {
@@ -293,6 +306,9 @@
       }));
     } else if (base.type === 'number') {
       base.class = sanitized.class || '';
+    } else if (base.type === 'palette') {
+      base.class = sanitized.class || '';
+      base.source = sanitized.source || '';
     }
     return base;
   }
@@ -358,6 +374,7 @@
       description: '',
       classes: '',
       class: '',
+      source: '',
       min: '',
       max: '',
       step: '',
@@ -626,6 +643,7 @@
               { value: 'select', label: strings.select || 'Select' },
               { value: 'preset', label: strings.preset || 'Preset' },
               { value: 'number', label: strings.number || 'Nombre' },
+              { value: 'palette', label: strings.palette || 'Palette' },
             ]
               .map((option) => `<option value=\"${option.value}\">${option.label}</option>`)
               .join('');
@@ -636,6 +654,8 @@
                 control.options = [];
                 control.classes = '';
               } else if (control.type === 'number') {
+                control.options = [];
+              } else if (control.type === 'palette') {
                 control.options = [];
               } else if (!Array.isArray(control.options)) {
                 control.options = [];
@@ -763,6 +783,34 @@
                 updateInput();
               });
               controlEl.appendChild(createField(strings.defaultValue || 'Valeur par défaut', defaultInput));
+            } else if (control.type === 'palette') {
+              const classInput = document.createElement('input');
+              classInput.type = 'text';
+              classInput.className = 'regular-text';
+              classInput.placeholder = 'has-text';
+              classInput.value = control.class || '';
+              classInput.addEventListener('input', (e) => {
+                control.class = e.target.value;
+                updateInput();
+              });
+              controlEl.appendChild(createField(strings.classPrefix || 'Préfixe de classe', classInput));
+
+              const sourceSelect = document.createElement('select');
+              const srcOptions = [
+                { value: '', label: '—' },
+                { value: 'colors', label: strings.paletteColors || 'Couleurs' },
+                { value: 'fontSizes', label: strings.paletteFontSizes || 'Tailles de police' },
+                { value: 'spacing', label: 'Espacement' },
+              ];
+              sourceSelect.innerHTML = srcOptions
+                .map((o) => `<option value="${o.value}">${o.label}</option>`)
+                .join('');
+              sourceSelect.value = control.source || '';
+              sourceSelect.addEventListener('change', (e) => {
+                control.source = e.target.value;
+                updateInput();
+              });
+              controlEl.appendChild(createField(strings.paletteSource || 'Source', sourceSelect));
             } else {
               const optionsWrapper = document.createElement('div');
               optionsWrapper.className = 'up-ge-options';

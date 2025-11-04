@@ -1,0 +1,16 @@
+{
+    "blocks": [
+        "core/buttons"
+    ],
+    "panel": "espacement",
+    "controls": [
+        {
+            "id": "espacementid",
+            "label": "espacementlabel",
+            "type": "palette",
+            "panel": "espacement",
+            "class": "has-gap",
+            "source": "spacing"
+        }
+    ]
+}

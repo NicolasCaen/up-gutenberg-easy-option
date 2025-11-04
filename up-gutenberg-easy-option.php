@@ -152,6 +152,31 @@ class Up_Block_Switches {
                 'label' => $label,
                 'options' => $options,
             ];
+        } elseif ($type === 'palette') {
+            $classPrefix = isset($control['class']) ? sanitize_html_class($control['class']) : '';
+            $rawSource = isset($control['source']) ? trim((string)$control['source']) : '';
+            $srcLower = strtolower($rawSource);
+            // Map to canonical keys
+            if ($srcLower === 'colors' || $srcLower === 'color') {
+                $source = 'colors';
+            } elseif ($srcLower === 'fontsizes' || $srcLower === 'font-sizes' || $srcLower === 'font_size' || $srcLower === 'font') {
+                $source = 'fontSizes';
+            } elseif ($srcLower === 'spacing' || $srcLower === 'sizes' || $srcLower === 'sizing') {
+                $source = 'spacing';
+            } else {
+                $source = '';
+            }
+            if (!$classPrefix || !$source) {
+                return null;
+            }
+
+            $normalized = [
+                'type' => 'palette',
+                'id' => $id,
+                'label' => $label,
+                'class' => $classPrefix,
+                'source' => $source,
+            ];
         } elseif ($type === 'number') {
             $classPrefix = isset($control['class']) ? sanitize_html_class($control['class']) : '';
             if (!$classPrefix) {
@@ -403,6 +428,10 @@ class Up_Block_Switches {
                     'maxValue' => __('Valeur max', 'up'),
                     'stepValue' => __('Pas', 'up'),
                     'defaultValue' => __('Valeur par défaut', 'up'),
+                    'palette' => __('Palette', 'up'),
+                    'paletteSource' => __('Source', 'up'),
+                    'paletteColors' => __('Couleurs', 'up'),
+                    'paletteFontSizes' => __('Tailles de police', 'up'),
                 ],
             ]);
         } elseif ($this->preset_page_hook && $hook === $this->preset_page_hook) {
@@ -856,7 +885,102 @@ class Up_Block_Switches {
         $stored = $this->normalize_switches($this->get_option_blocks());
         $filtered = $this->normalize_switches(apply_filters('up_block_switches', []));
         $merged = $this->merge_configs($stored, $filtered);
+
+        // Enrichir les contrôles palette avec des options dérivées du theme.json
+        foreach ($merged as $block => &$controls) {
+            if (!is_array($controls)) { continue; }
+            foreach ($controls as &$control) {
+                if (!is_array($control)) { continue; }
+                if (!isset($control['type']) || $control['type'] !== 'palette') { continue; }
+                $classPrefix = isset($control['class']) ? $control['class'] : '';
+                $source = isset($control['source']) ? $control['source'] : '';
+                if (!$classPrefix || !$source) { continue; }
+                $tokens = $this->get_palette_tokens($source);
+                if (!$tokens) { continue; }
+                $options = [];
+                foreach ($tokens as $tok) {
+                    $slug = isset($tok['slug']) && $tok['slug'] !== '' ? $tok['slug'] : (isset($tok['name']) ? $tok['name'] : (isset($tok['label']) ? $tok['label'] : ''));
+                    if (!$slug) { continue; }
+                    $label = isset($tok['name']) ? $tok['name'] : (isset($tok['label']) ? $tok['label'] : $slug);
+                    $cls = sanitize_html_class($classPrefix . '-' . $slug);
+                    if (!$cls) { continue; }
+                    $options[] = [
+                        'id' => sanitize_key($slug),
+                        'label' => sanitize_text_field($label),
+                        'classes' => [$cls],
+                        'class' => $cls,
+                    ];
+                }
+                if ($options) {
+                    $control['options'] = $options;
+                }
+            }
+            unset($control);
+        }
+        unset($controls);
+
         return new \WP_REST_Response($merged, 200);
+    }
+
+    protected function get_palette_tokens($source) {
+        if (!function_exists('wp_get_global_settings')) {
+            return [];
+        }
+        $settings = wp_get_global_settings();
+        $src = strtolower($source);
+        if ($src === 'colors' || $src === 'color') {
+            // colors palette
+            $cands = [];
+            if (isset($settings['color']['palette']['theme'])) { $cands[] = $settings['color']['palette']['theme']; }
+            if (isset($settings['color']['palette'])) { $cands[] = $settings['color']['palette']; }
+            return $this->flatten_token_candidates($cands);
+        }
+        if ($src === 'fontsizes' || $src === 'font-sizes' || $src === 'font' || $src === 'fontsize' || $src === 'fontSizes') {
+            $cands = [];
+            if (isset($settings['typography']['fontSizes'])) { $cands[] = $settings['typography']['fontSizes']; }
+            if (isset($settings['fontSizes'])) { $cands[] = $settings['fontSizes']; }
+            return $this->flatten_token_candidates($cands);
+        }
+        if ($src === 'spacing' || $src === 'sizes' || $src === 'sizing') {
+            $cands = [];
+            if (isset($settings['spacing']['spacingSizes']['theme'])) { $cands[] = $settings['spacing']['spacingSizes']['theme']; }
+            if (isset($settings['spacing']['spacingSizes'])) { $cands[] = $settings['spacing']['spacingSizes']; }
+            if (isset($settings['spacing']['spacingScale']['theme'])) { $cands[] = $settings['spacing']['spacingScale']['theme']; }
+            if (isset($settings['spacing']['spacingScale'])) { $cands[] = $settings['spacing']['spacingScale']; }
+            if (isset($settings['spacingSizes'])) { $cands[] = $settings['spacingSizes']; }
+            if (isset($settings['dimensions']['spacingSizes'])) { $cands[] = $settings['dimensions']['spacingSizes']; }
+            // group format: [ { sizes: [...] }, ... ]
+            $flat = $this->flatten_token_candidates($cands);
+            if (!$flat && isset($settings['spacing']) && is_array($settings['spacing'])) {
+                foreach ($settings['spacing'] as $maybeGroup) {
+                    if (is_array($maybeGroup) && isset($maybeGroup['sizes']) && is_array($maybeGroup['sizes'])) {
+                        $flat = array_merge($flat, $maybeGroup['sizes']);
+                    }
+                }
+            }
+            return $flat;
+        }
+        return [];
+    }
+
+    protected function flatten_token_candidates(array $cands) {
+        $out = [];
+        foreach ($cands as $cand) {
+            if (is_array($cand)) {
+                // If array of groups with sizes
+                $isGroupList = isset($cand[0]) && is_array($cand[0]) && isset($cand[0]['sizes']) && is_array($cand[0]['sizes']);
+                if ($isGroupList) {
+                    foreach ($cand as $grp) {
+                        if (isset($grp['sizes']) && is_array($grp['sizes'])) {
+                            foreach ($grp['sizes'] as $t) { $out[] = $t; }
+                        }
+                    }
+                } else {
+                    foreach ($cand as $t) { $out[] = $t; }
+                }
+            }
+        }
+        return $out;
     }
 }
 

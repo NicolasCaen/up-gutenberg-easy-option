@@ -129,6 +129,113 @@
                   PanelBody,
                   { title: panelTitle, initialOpen: true, key: panelTitle },
                   items.map((sw) => {
+                    if (sw.type === 'palette' && sw.class && sw.source) {
+                      // If backend provided options, use them directly (most robust)
+                      if (Array.isArray(sw.options) && sw.options.length) {
+                        const optionsClasses = sw.options.map((o) => toClassArray(o.classes || o.class));
+                        const currentClasses = className.split(/\s+/).filter(Boolean);
+                        const activeOption = sw.options.find((option, idx) => {
+                          const optionClasses = optionsClasses[idx];
+                          if (!optionClasses.length) return false;
+                          return optionClasses.every((cls) => currentClasses.includes(cls));
+                        });
+                        const value = activeOption ? activeOption.id : '';
+                        const selectOptions = [{ label: '—', value: '' }].concat(
+                          sw.options.map((o) => ({ label: o.label || o.id, value: o.id }))
+                        );
+                        return wp.element.createElement(SelectControl, {
+                          key: sw.id,
+                          label: sw.label || sw.id,
+                          help: sw.description || undefined,
+                          value,
+                          options: selectOptions,
+                          onChange: (val) => {
+                            const index = sw.options.findIndex((o) => o.id === val);
+                            const selectedClasses = index > -1 ? optionsClasses[index] : [];
+                            const newClassName = replaceClassesExclusive(className, optionsClasses, selectedClasses);
+                            setAttributes({ className: newClassName || undefined });
+                          },
+                        });
+                      }
+                      const beSel = (wp.data && wp.data.select) ? wp.data.select('core/block-editor') : null;
+                      const edSel = (wp.data && wp.data.select) ? wp.data.select('core/editor') : null;
+                      const settings = (beSel && beSel.getSettings ? beSel.getSettings() : null) || (edSel && edSel.getEditorSettings ? edSel.getEditorSettings() : null) || {};
+                      const paletteColors = (settings && (settings.colors || (settings.color && settings.color.palette))) || [];
+                      const paletteFontSizes = (settings && (settings.fontSizes || (settings.typography && settings.typography.fontSizes))) || [];
+                      const spacingTokensCandidates = [];
+                      if (settings) {
+                        if (settings.spacing && (settings.spacing.spacingSizes || settings.spacing.sizeScale || settings.spacing.sizes)) {
+                          spacingTokensCandidates.push(settings.spacing.spacingSizes || settings.spacing.sizeScale || settings.spacing.sizes);
+                        }
+                        if (settings.spacingSizes) {
+                          spacingTokensCandidates.push(settings.spacingSizes);
+                        }
+                        if (settings.__experimentalFeatures && settings.__experimentalFeatures.spacing && settings.__experimentalFeatures.spacing.spacingSizes) {
+                          spacingTokensCandidates.push(settings.__experimentalFeatures.spacing.spacingSizes);
+                        }
+                        if (settings.__experimentalFeatures && settings.__experimentalFeatures.spacing && settings.__experimentalFeatures.spacing.sizeScale) {
+                          spacingTokensCandidates.push(settings.__experimentalFeatures.spacing.sizeScale);
+                        }
+                        if (settings.settings && settings.settings.spacing && settings.settings.spacing.spacingSizes) {
+                          spacingTokensCandidates.push(settings.settings.spacing.spacingSizes);
+                        }
+                        if (settings.theme && settings.theme.settings && settings.theme.settings.spacing && settings.theme.settings.spacing.spacingSizes) {
+                          spacingTokensCandidates.push(settings.theme.settings.spacing.spacingSizes);
+                        }
+                      }
+                      let spacingTokens = ([]).concat.apply([], spacingTokensCandidates.map((c) => Array.isArray(c) ? c : (c && c.items ? c.items : [])).filter(Boolean));
+                      // Some themes might provide an array of groups with `sizes` key
+                      if (!spacingTokens.length) {
+                        const groupArrays = spacingTokensCandidates
+                          .filter((c) => Array.isArray(c))
+                          .map((arr) => arr.reduce((acc, item) => acc.concat(item && Array.isArray(item.sizes) ? item.sizes : []), []));
+                        spacingTokens = ([]).concat.apply([], groupArrays);
+                      }
+
+                      let tokens = [];
+                      if (sw.source === 'colors') {
+                        tokens = Array.isArray(paletteColors) ? paletteColors : [];
+                      } else if (sw.source === 'fontSizes') {
+                        tokens = Array.isArray(paletteFontSizes) ? paletteFontSizes : [];
+                      } else if (sw.source === 'spacing') {
+                        tokens = Array.isArray(spacingTokens) ? spacingTokens : [];
+                      }
+
+                      const opts = tokens
+                        .map((t) => ({
+                          slug: (t && (t.slug || t.name || t.label)) ? (t.slug || t.name || t.label) : (t && t.size ? String(t.size) : ''),
+                          label: (t && (t.name || t.label || t.slug)) ? (t.name || t.label || t.slug) : (t && t.size ? String(t.size) : ''),
+                        }))
+                        .filter((t) => t.slug);
+
+                      const options = [{ label: '—', value: '' }].concat(
+                        opts.map((t) => ({ label: t.label, value: t.slug }))
+                      );
+
+                      const classesFor = (slug) => (slug ? [String(sw.class) + '-' + String(slug)] : []);
+                      const optionsClasses = opts.map((t) => classesFor(t.slug));
+
+                      const currentClasses = className.split(/\s+/).filter(Boolean);
+                      const active = opts.find((t) => {
+                        const req = classesFor(t.slug);
+                        return req.length && req.every((c) => currentClasses.includes(c));
+                      });
+                      const value = active ? active.slug : '';
+
+                      return wp.element.createElement(SelectControl, {
+                        key: sw.id,
+                        label: sw.label || sw.id,
+                        help: sw.description || undefined,
+                        value,
+                        options,
+                        onChange: (val) => {
+                          const idx = opts.findIndex((t) => t.slug === val);
+                          const selectedClasses = idx > -1 ? optionsClasses[idx] : [];
+                          const newClassName = replaceClassesExclusive(className, optionsClasses, selectedClasses);
+                          setAttributes({ className: newClassName || undefined });
+                        },
+                      });
+                    }
                     if ((sw.type === 'select' || sw.type === 'preset') && Array.isArray(sw.options)) {
                       const optionsClasses = sw.options.map((o) => toClassArray(o.classes || o.class));
                       const currentClasses = className.split(/\s+/).filter(Boolean);

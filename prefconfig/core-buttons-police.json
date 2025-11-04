@@ -1,0 +1,16 @@
+{
+    "blocks": [
+        "core/buttons"
+    ],
+    "panel": "Police",
+    "controls": [
+        {
+            "id": "police",
+            "label": "police",
+            "type": "palette",
+            "panel": "Police",
+            "class": "police",
+            "source": "spacing"
+        }
+    ]
+}
