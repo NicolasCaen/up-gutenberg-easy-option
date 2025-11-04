@@ -1,0 +1,19 @@
+{
+    "blocks": [
+        "core/media-text"
+    ],
+    "panel": "Espacement",
+    "controls": [
+        {
+            "id": "gap",
+            "label": "gap",
+            "type": "number",
+            "panel": "Espacement",
+            "class": "has-gap",
+            "min": 1,
+            "max": 120,
+            "step": 4,
+            "default": 38
+        }
+    ]
+}

@@ -1,6 +1,6 @@
 (function () {
   const { __ } = wp.i18n;
-  const { PanelBody, ToggleControl, SelectControl, Spinner } = wp.components;
+  const { PanelBody, ToggleControl, SelectControl, Spinner, TextControl } = wp.components;
   const { Fragment, useEffect, useState } = wp.element;
   const { InspectorControls } = wp.blockEditor || wp.editor;
   const { addFilter } = wp.hooks;
@@ -154,6 +154,53 @@
                           const index = sw.options.findIndex((o) => o.id === val);
                           const selectedClasses = index > -1 ? optionsClasses[index] : [];
                           const newClassName = replaceClassesExclusive(className, optionsClasses, selectedClasses);
+                          setAttributes({ className: newClassName || undefined });
+                        },
+                      });
+                    } else if (sw.type === 'number' && sw.class) {
+                      const prefix = String(sw.class);
+                      const parts = className.split(/\s+/).filter(Boolean);
+                      const currentToken = parts.find((t) => t.indexOf(prefix + '-') === 0);
+                      const currentValue = currentToken ? currentToken.slice(prefix.length + 1) : '';
+
+                      const clamp = (val) => {
+                        const n = Number(val);
+                        if (!Number.isFinite(n)) return '';
+                        const min = typeof sw.min === 'number' ? sw.min : null;
+                        const max = typeof sw.max === 'number' ? sw.max : null;
+                        let v = n;
+                        if (min !== null && v < min) v = min;
+                        if (max !== null && v > max) v = max;
+                        return String(v);
+                      };
+
+                      const toNewClassName = (val) => {
+                        // remove previous prefix-* classes
+                        let list = parts.filter((t) => !(t.indexOf(prefix + '-') === 0));
+                        const trimmed = String(val).trim();
+                        if (trimmed !== '') {
+                          const v = clamp(trimmed);
+                          if (v !== '') {
+                            list.push(prefix + '-' + v);
+                          }
+                        }
+                        return list.join(' ');
+                      };
+
+                      const inputProps = {};
+                      if (typeof sw.min === 'number') inputProps.min = sw.min;
+                      if (typeof sw.max === 'number') inputProps.max = sw.max;
+                      if (typeof sw.step === 'number' && sw.step > 0) inputProps.step = sw.step;
+
+                      return wp.element.createElement(TextControl, {
+                        key: sw.id,
+                        type: 'number',
+                        label: sw.label || sw.id,
+                        help: sw.description || undefined,
+                        value: currentValue,
+                        ...inputProps,
+                        onChange: (val) => {
+                          const newClassName = toNewClassName(val);
                           setAttributes({ className: newClassName || undefined });
                         },
                       });

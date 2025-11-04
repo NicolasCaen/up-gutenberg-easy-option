@@ -152,6 +152,52 @@ class Up_Block_Switches {
                 'label' => $label,
                 'options' => $options,
             ];
+        } elseif ($type === 'number') {
+            $classPrefix = isset($control['class']) ? sanitize_html_class($control['class']) : '';
+            if (!$classPrefix) {
+                return null;
+            }
+
+            $min = $this->sanitize_number_field($control['min'] ?? null);
+            $max = $this->sanitize_number_field($control['max'] ?? null);
+            if ($min !== null && $max !== null && $min > $max) {
+                [$min, $max] = [$max, $min];
+            }
+
+            $step = $this->sanitize_number_field($control['step'] ?? null);
+            if ($step !== null && $step <= 0) {
+                $step = null;
+            }
+
+            $default = $this->sanitize_number_field($control['default'] ?? null);
+            if ($default !== null) {
+                if ($min !== null && $default < $min) {
+                    $default = $min;
+                }
+                if ($max !== null && $default > $max) {
+                    $default = $max;
+                }
+            }
+
+            $normalized = [
+                'type' => 'number',
+                'id' => $id,
+                'label' => $label,
+                'class' => $classPrefix,
+            ];
+
+            if ($min !== null) {
+                $normalized['min'] = $min;
+            }
+            if ($max !== null) {
+                $normalized['max'] = $max;
+            }
+            if ($step !== null) {
+                $normalized['step'] = $step;
+            }
+            if ($default !== null) {
+                $normalized['default'] = $default;
+            }
         } else {
             $classes = $this->normalize_classes($control['classes'] ?? null, $control['class'] ?? null);
             if (!$classes) {
@@ -217,6 +263,25 @@ class Up_Block_Switches {
         return array_values(array_unique($list));
     }
 
+    protected function sanitize_number_field($value) {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_string($value)) {
+            $value = trim($value);
+            if ($value === '') {
+                return null;
+            }
+        }
+
+        if (!is_numeric($value)) {
+            return null;
+        }
+
+        return 0 + $value;
+    }
+
     protected function merge_configs(array ...$configs) {
         $merged = [];
 
@@ -265,7 +330,7 @@ class Up_Block_Switches {
         // Menu principal du plugin
         $this->admin_page_hook = add_menu_page(
             __('UP Gutenberg Options', 'up'),
-            __('UP Gutenberg', 'up'),
+            __('Up Options', 'up'),
             'manage_options',
             self::ADMIN_MENU_SLUG,
             [$this, 'render_admin_page'],
@@ -327,11 +392,17 @@ class Up_Block_Switches {
                     'preset' => __('Preset', 'up'),
                     'toggle' => __('Toggle', 'up'),
                     'select' => __('Select', 'up'),
+                    'number' => __('Nombre', 'up'),
                     'presetTitle' => __('Presets / Bundles', 'up'),
                     'savePanel' => __('Enregistrer le panneau comme préconfig', 'up'),
                     'savingPanel' => __('Enregistrement…', 'up'),
                     'panelSaved' => __('Préconfiguration enregistrée.', 'up'),
                     'panelSaveError' => __('Impossible d’enregistrer la préconfiguration.', 'up'),
+                    'classPrefix' => __('Préfixe de classe', 'up'),
+                    'minValue' => __('Valeur min', 'up'),
+                    'maxValue' => __('Valeur max', 'up'),
+                    'stepValue' => __('Pas', 'up'),
+                    'defaultValue' => __('Valeur par défaut', 'up'),
                 ],
             ]);
         } elseif ($this->preset_page_hook && $hook === $this->preset_page_hook) {

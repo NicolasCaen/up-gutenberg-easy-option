@@ -64,6 +64,32 @@
       .filter(Boolean);
   }
 
+  function toNumberString(value) {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? String(value) : '';
+    }
+    const str = String(value).trim();
+    return str;
+  }
+
+  function parseNumber(value) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed === '') {
+        return null;
+      }
+      value = trimmed;
+    }
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
   function cloneControl(ctrl) {
     return {
       type: ctrl.type || 'toggle',
@@ -72,6 +98,11 @@
       panel: ctrl.panel || '',
       description: ctrl.description || '',
       classes: arrayToString(ctrl.classes || ctrl.class || ''),
+      class: typeof ctrl.class === 'string' ? ctrl.class : '',
+      min: toNumberString(ctrl.min),
+      max: toNumberString(ctrl.max),
+      step: toNumberString(ctrl.step),
+      default: toNumberString(ctrl.default),
       options: (ctrl.options || []).map((opt) => ({
         id: opt.id || '',
         label: opt.label || '',
@@ -100,6 +131,13 @@
       }
       if (typeof control._collapsed !== 'boolean') {
         control._collapsed = true;
+      }
+      if (control.type === 'number') {
+        control.class = typeof control.class === 'string' ? control.class : '';
+        control.min = toNumberString(control.min);
+        control.max = toNumberString(control.max);
+        control.step = toNumberString(control.step);
+        control.default = toNumberString(control.default);
       }
     });
   }
@@ -132,6 +170,50 @@
         return null;
       }
       result.classes = classes;
+    } else if (type === 'number') {
+      const classPrefix = (control.class || '').trim();
+      if (!classPrefix) {
+        return null;
+      }
+
+      const min = parseNumber(control.min);
+      const max = parseNumber(control.max);
+      let normalizedMin = min;
+      let normalizedMax = max;
+      if (normalizedMin !== null && normalizedMax !== null && normalizedMin > normalizedMax) {
+        normalizedMin = max;
+        normalizedMax = min;
+      }
+
+      let step = parseNumber(control.step);
+      if (step !== null && step <= 0) {
+        step = null;
+      }
+
+      let defaultValue = parseNumber(control.default);
+      if (defaultValue !== null) {
+        if (normalizedMin !== null && defaultValue < normalizedMin) {
+          defaultValue = normalizedMin;
+        }
+        if (normalizedMax !== null && defaultValue > normalizedMax) {
+          defaultValue = normalizedMax;
+        }
+      }
+
+      result.type = 'number';
+      result.class = classPrefix;
+      if (normalizedMin !== null) {
+        result.min = normalizedMin;
+      }
+      if (normalizedMax !== null) {
+        result.max = normalizedMax;
+      }
+      if (step !== null) {
+        result.step = step;
+      }
+      if (defaultValue !== null) {
+        result.default = defaultValue;
+      }
     } else {
       const options = [];
       (control.options || []).forEach((opt) => {
@@ -194,16 +276,23 @@
       description: sanitized.description || '',
       classes: '',
       options: [],
+      class: sanitized.class || '',
+      min: toNumberString(sanitized.min),
+      max: toNumberString(sanitized.max),
+      step: toNumberString(sanitized.step),
+      default: toNumberString(sanitized.default),
       _collapsed: false,
     };
     if (base.type === 'toggle') {
       base.classes = arrayToString(sanitized.classes || []);
-    } else {
+    } else if (base.type === 'select' || base.type === 'preset') {
       base.options = (sanitized.options || []).map((opt) => ({
         id: opt.id || '',
         label: opt.label || '',
         classes: arrayToString(opt.classes || []),
       }));
+    } else if (base.type === 'number') {
+      base.class = sanitized.class || '';
     }
     return base;
   }
@@ -268,6 +357,11 @@
       panel: '',
       description: '',
       classes: '',
+      class: '',
+      min: '',
+      max: '',
+      step: '',
+      default: '',
       options: [],
       _collapsed: true,
     };
@@ -531,6 +625,7 @@
               { value: 'toggle', label: strings.toggle || 'Toggle' },
               { value: 'select', label: strings.select || 'Select' },
               { value: 'preset', label: strings.preset || 'Preset' },
+              { value: 'number', label: strings.number || 'Nombre' },
             ]
               .map((option) => `<option value=\"${option.value}\">${option.label}</option>`)
               .join('');
@@ -538,6 +633,9 @@
             typeSelect.addEventListener('change', (e) => {
               control.type = e.target.value;
               if (control.type === 'toggle') {
+                control.options = [];
+                control.classes = '';
+              } else if (control.type === 'number') {
                 control.options = [];
               } else if (!Array.isArray(control.options)) {
                 control.options = [];
@@ -600,6 +698,71 @@
                 updateInput();
               });
               controlEl.appendChild(createField(strings.classes || 'Classes', classesInput));
+            } else if (control.type === 'number') {
+              const classInput = document.createElement('input');
+              classInput.type = 'text';
+              classInput.className = 'regular-text';
+              classInput.placeholder = 'is-height';
+              classInput.value = control.class || '';
+              classInput.addEventListener('input', (e) => {
+                control.class = e.target.value;
+                updateInput();
+              });
+              controlEl.appendChild(createField(strings.classPrefix || 'Préfixe de classe', classInput));
+
+              const numberRow = document.createElement('div');
+              numberRow.className = 'up-ge-row';
+
+              const minInput = document.createElement('input');
+              minInput.type = 'number';
+              minInput.className = 'regular-text';
+              minInput.value = control.min || '';
+              minInput.addEventListener('input', (e) => {
+                control.min = e.target.value;
+                updateInput();
+              });
+              const minCol = document.createElement('div');
+              minCol.className = 'up-ge-col';
+              minCol.appendChild(createField(strings.minValue || 'Valeur min', minInput));
+              numberRow.appendChild(minCol);
+
+              const maxInput = document.createElement('input');
+              maxInput.type = 'number';
+              maxInput.className = 'regular-text';
+              maxInput.value = control.max || '';
+              maxInput.addEventListener('input', (e) => {
+                control.max = e.target.value;
+                updateInput();
+              });
+              const maxCol = document.createElement('div');
+              maxCol.className = 'up-ge-col';
+              maxCol.appendChild(createField(strings.maxValue || 'Valeur max', maxInput));
+              numberRow.appendChild(maxCol);
+
+              const stepInput = document.createElement('input');
+              stepInput.type = 'number';
+              stepInput.className = 'regular-text';
+              stepInput.value = control.step || '';
+              stepInput.addEventListener('input', (e) => {
+                control.step = e.target.value;
+                updateInput();
+              });
+              const stepCol = document.createElement('div');
+              stepCol.className = 'up-ge-col';
+              stepCol.appendChild(createField(strings.stepValue || 'Pas', stepInput));
+              numberRow.appendChild(stepCol);
+
+              controlEl.appendChild(numberRow);
+
+              const defaultInput = document.createElement('input');
+              defaultInput.type = 'number';
+              defaultInput.className = 'regular-text';
+              defaultInput.value = control.default || '';
+              defaultInput.addEventListener('input', (e) => {
+                control.default = e.target.value;
+                updateInput();
+              });
+              controlEl.appendChild(createField(strings.defaultValue || 'Valeur par défaut', defaultInput));
             } else {
               const optionsWrapper = document.createElement('div');
               optionsWrapper.className = 'up-ge-options';
