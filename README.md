@@ -106,6 +106,15 @@ add_filter('up_block_switches', function($switches) {
 
 ## Changelog
 
+## 0.5.0 - 2025-11-04
+- Nouveau type `number`: génère une classe dynamique `prefixe-NUM` avec gestion optionnelle de `min`, `max`, `step`, `default` (vide = pas de classe).
+- Nouveau type `palette`: sélection basée sur les tokens du thème (`colors`, `fontSizes`, `spacing`).
+  - Récupération robuste côté éditeur et désormais enrichie côté PHP via `wp_get_global_settings()` (les options sont servies directement par l’API REST).
+- `extra` (classes supplémentaires) sur tous les types: ajoutées lorsque le contrôle est actif, retirées lorsqu’il ne l’est pas.
+- Admin: sélection de la source palette (Couleurs, Tailles de police, Espacement) et champ « Classes supplémentaires ».
+- Tolérance sur les séparateurs: les virgules dans les listes de classes sont acceptées et converties en espaces (admin et backend).
+- Correctifs: stabilité de l’UI admin, restauration du sélecteur de type, prise en charge des panneaux multiples.
+
 ### 0.4.0 (2025-11-01)
 - Menu dédié « UP Gutenberg » avec sous-pages « Configuration » et « Préconfigurations ».
 - Dashboard sur la page top-level avec raccourcis, compteurs et bonnes pratiques.
