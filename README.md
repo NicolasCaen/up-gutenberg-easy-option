@@ -112,6 +112,7 @@ add_filter('up_block_switches', function($switches) {
 - Possibilité d'enregistrer chaque configuration de bloc comme préconfiguration individuelle.
 - Bouton pour sauvegarder toutes les configurations du filtre comme préconfigurations d'un coup.
 - Les préconfigurations créées depuis le filtre peuvent ensuite être importées dans la configuration principale.
+- Config par type de bloc
 
 ## 0.5.0 - 2025-11-04
 - Nouveau type `number`: génère une classe dynamique `prefixe-NUM` avec gestion optionnelle de `min`, `max`, `step`, `default` (vide = pas de classe).
