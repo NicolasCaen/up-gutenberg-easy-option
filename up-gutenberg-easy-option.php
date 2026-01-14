@@ -2,7 +2,7 @@
 /**
  * Plugin Name: UP gutenberg easy option
  * Description: Ajoute des switches configurables aux blocs Gutenberg pour ajouter/retirer des classes via l’inspecteur. Configurable via un filtre et exposé via l’API REST.
- * Version: 0.5.0
+ * Version: 0.6.0
  * Author: GEHIN Nicolas
  */
 
@@ -16,11 +16,13 @@ class Up_Block_Switches {
     const ADMIN_PAGE_SLUG = 'up-ge-config';
     const ADMIN_MENU_SLUG = 'up-gutenberg';
     const PRESET_PAGE_SLUG = 'up-ge-preconfigs';
+    const FILTER_PAGE_SLUG = 'up-ge-filter-configs';
     const PRESET_DIR = 'prefconfig';
 
     protected $admin_page_hook = null;
     protected $preset_page_hook = null;
     protected $config_page_hook = null;
+    protected $filter_page_hook = null;
 
     public function __construct() {
         add_action('rest_api_init', [$this, 'register_rest_routes']);
@@ -32,6 +34,10 @@ class Up_Block_Switches {
         add_action('admin_post_up_ge_export_config', [$this, 'handle_export_config']);
         add_action('admin_post_up_ge_import_preset', [$this, 'handle_import_preset']);
         add_action('wp_ajax_up_ge_save_panel_preset', [$this, 'handle_save_panel_preset']);
+        add_action('wp_ajax_up_ge_save_filter_as_preset', [$this, 'handle_save_filter_as_preset']);
+        add_action('wp_ajax_up_ge_save_all_filters_as_presets', [$this, 'handle_save_all_filters_as_presets']);
+        add_action('admin_post_up_ge_save_filter_as_preset', [$this, 'handle_save_filter_as_preset_post']);
+        add_action('admin_post_up_ge_save_all_filters_as_presets', [$this, 'handle_save_all_filters_as_presets_post']);
         add_action('admin_notices', [$this, 'render_admin_notices']);
     }
 
@@ -392,6 +398,16 @@ class Up_Block_Switches {
             'manage_options',
             self::PRESET_PAGE_SLUG,
             [$this, 'render_presets_page_cb']
+        );
+
+        // Sous-menu: Configurations du filtre
+        $this->filter_page_hook = add_submenu_page(
+            self::ADMIN_MENU_SLUG,
+            __('Configurations du filtre', 'up'),
+            __('Configurations du filtre', 'up'),
+            'manage_options',
+            self::FILTER_PAGE_SLUG,
+            [$this, 'render_filter_configs_page']
         );
     }
 
@@ -869,6 +885,392 @@ class Up_Block_Switches {
     // Wrapper pour contourner d'éventuels problèmes de résolution de callback
     public function render_presets_page_cb() {
         return $this->render_presets_page();
+    }
+
+    /**
+     * Gère la sauvegarde d'une configuration du filtre comme préconfiguration (AJAX)
+     */
+    public function handle_save_filter_as_preset() {
+        check_ajax_referer('up_ge_filter_preset', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Accès refusé.', 'up')], 403);
+        }
+        
+        $block_name = isset($_POST['block']) ? sanitize_text_field(wp_unslash($_POST['block'])) : '';
+        $panel_name = isset($_POST['panel']) ? sanitize_text_field(wp_unslash($_POST['panel'])) : '';
+        
+        if (!$block_name || !$panel_name) {
+            wp_send_json_error(['message' => __('Paramètres manquants.', 'up')], 400);
+        }
+        
+        // Récupérer les configurations du filtre
+        $filter_configs = apply_filters('up_block_switches', []);
+        $normalized_configs = $this->normalize_switches($filter_configs);
+        
+        if (!isset($normalized_configs[$block_name])) {
+            wp_send_json_error(['message' => __('Configuration de bloc non trouvée.', 'up')], 404);
+        }
+        
+        $controls = $normalized_configs[$block_name];
+        
+        // Créer le nom du fichier
+        $filename = $this->build_preset_filename([$block_name], $panel_name);
+        $path = $this->preset_file_path($filename);
+        
+        // Préparer les données de la préconfiguration
+        $preset_data = [
+            'blocks' => [$block_name],
+            'panel' => $panel_name,
+            'controls' => $controls
+        ];
+        
+        $encoded = wp_json_encode($preset_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($encoded)) {
+            wp_send_json_error(['message' => __('Impossible de sérialiser la préconfiguration.', 'up')], 500);
+        }
+        
+        $dir = $this->get_preset_dir();
+        if (!$dir) {
+            wp_send_json_error(['message' => __('Le dossier de préconfiguration est indisponible.', 'up')], 500);
+        }
+        
+        $written = file_put_contents($path, $encoded);
+        if ($written === false) {
+            wp_send_json_error(['message' => __("Échec de l'enregistrement du fichier.", 'up')], 500);
+        }
+        
+        wp_send_json_success(['message' => __('Préconfiguration enregistrée avec succès.', 'up'), 'file' => $filename]);
+    }
+    
+    /**
+     * Gère la sauvegarde d'une configuration du filtre comme préconfiguration (POST)
+     */
+    public function handle_save_filter_as_preset_post() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Accès refusé.', 'up'));
+        }
+        
+        check_admin_referer('up_ge_filter_preset', 'nonce');
+        
+        $block_name = isset($_POST['block']) ? sanitize_text_field(wp_unslash($_POST['block'])) : '';
+        $panel_name = isset($_POST['panel']) ? sanitize_text_field(wp_unslash($_POST['panel'])) : '';
+        
+        if (!$block_name || !$panel_name) {
+            wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'error'], admin_url('admin.php')));
+            exit;
+        }
+        
+        // Récupérer les configurations du filtre
+        $filter_configs = apply_filters('up_block_switches', []);
+        $normalized_configs = $this->normalize_switches($filter_configs);
+        
+        if (!isset($normalized_configs[$block_name])) {
+            wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'error'], admin_url('admin.php')));
+            exit;
+        }
+        
+        $controls = $normalized_configs[$block_name];
+        
+        // Créer le nom du fichier
+        $filename = $this->build_preset_filename([$block_name], $panel_name);
+        $path = $this->preset_file_path($filename);
+        
+        // Préparer les données de la préconfiguration
+        $preset_data = [
+            'blocks' => [$block_name],
+            'panel' => $panel_name,
+            'controls' => $controls
+        ];
+        
+        $encoded = wp_json_encode($preset_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($encoded)) {
+            wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'error'], admin_url('admin.php')));
+            exit;
+        }
+        
+        $dir = $this->get_preset_dir();
+        if (!$dir) {
+            wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'error'], admin_url('admin.php')));
+            exit;
+        }
+        
+        $written = file_put_contents($path, $encoded);
+        if ($written === false) {
+            wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'error'], admin_url('admin.php')));
+            exit;
+        }
+        
+        wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'preset_saved'], admin_url('admin.php')));
+        exit;
+    }
+    
+    /**
+     * Gère la sauvegarde de toutes les configurations du filtre comme préconfigurations (AJAX)
+     */
+    public function handle_save_all_filters_as_presets() {
+        check_ajax_referer('up_ge_filter_preset', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Accès refusé.', 'up')], 403);
+        }
+        
+        // Récupérer les configurations du filtre
+        $filter_configs = apply_filters('up_block_switches', []);
+        $normalized_configs = $this->normalize_switches($filter_configs);
+        
+        if (empty($normalized_configs)) {
+            wp_send_json_error(['message' => __('Aucune configuration à sauvegarder.', 'up')], 404);
+        }
+        
+        $saved_count = 0;
+        $errors = [];
+        
+        foreach ($normalized_configs as $block_name => $controls) {
+            $panel_name = sprintf(__('Options %s', 'up'), $block_name);
+            
+            // Créer le nom du fichier
+            $filename = $this->build_preset_filename([$block_name], $panel_name);
+            $path = $this->preset_file_path($filename);
+            
+            // Préparer les données de la préconfiguration
+            $preset_data = [
+                'blocks' => [$block_name],
+                'panel' => $panel_name,
+                'controls' => $controls
+            ];
+            
+            $encoded = wp_json_encode($preset_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if (!is_string($encoded)) {
+                $errors[] = sprintf(__('Impossible de sérialiser %s', 'up'), $block_name);
+                continue;
+            }
+            
+            $written = file_put_contents($path, $encoded);
+            if ($written === false) {
+                $errors[] = sprintf(__('Échec de sauvegarde pour %s', 'up'), $block_name);
+                continue;
+            }
+            
+            $saved_count++;
+        }
+        
+        if ($saved_count === 0 && !empty($errors)) {
+            wp_send_json_error(['message' => implode(', ', $errors)], 500);
+        } elseif ($saved_count > 0 && !empty($errors)) {
+            wp_send_json_success([
+                'message' => sprintf(__('%d préconfigurations sauvegardées avec quelques erreurs: %s', 'up'), 
+                    $saved_count, implode(', ', $errors))
+            ]);
+        } else {
+            wp_send_json_success(['message' => sprintf(__('%d préconfigurations sauvegardées avec succès.', 'up'), $saved_count)]);
+        }
+    }
+    
+    /**
+     * Gère la sauvegarde de toutes les configurations du filtre comme préconfigurations (POST)
+     */
+    public function handle_save_all_filters_as_presets_post() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Accès refusé.', 'up'));
+        }
+        
+        check_admin_referer('up_ge_filter_preset', 'nonce');
+        
+        // Récupérer les configurations du filtre
+        $filter_configs = apply_filters('up_block_switches', []);
+        $normalized_configs = $this->normalize_switches($filter_configs);
+        
+        if (empty($normalized_configs)) {
+            wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'error'], admin_url('admin.php')));
+            exit;
+        }
+        
+        $saved_count = 0;
+        
+        foreach ($normalized_configs as $block_name => $controls) {
+            $panel_name = sprintf(__('Options %s', 'up'), $block_name);
+            
+            // Créer le nom du fichier
+            $filename = $this->build_preset_filename([$block_name], $panel_name);
+            $path = $this->preset_file_path($filename);
+            
+            // Préparer les données de la préconfiguration
+            $preset_data = [
+                'blocks' => [$block_name],
+                'panel' => $panel_name,
+                'controls' => $controls
+            ];
+            
+            $encoded = wp_json_encode($preset_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if (!is_string($encoded)) {
+                continue;
+            }
+            
+            $written = file_put_contents($path, $encoded);
+            if ($written !== false) {
+                $saved_count++;
+            }
+        }
+        
+        if ($saved_count > 0) {
+            wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'preset_saved'], admin_url('admin.php')));
+        } else {
+            wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'error'], admin_url('admin.php')));
+        }
+        exit;
+    }
+
+    /**
+     * Affiche la page des configurations du filtre
+     */
+    public function render_filter_configs_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Accès refusé.', 'up'));
+        }
+
+        // Récupérer les configurations du filtre
+        $filter_configs = apply_filters('up_block_switches', []);
+        $normalized_configs = $this->normalize_switches($filter_configs);
+        
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Configurations du filtre up_block_switches', 'up'); ?></h1>
+            <p><?php esc_html_e('Ces configurations sont définies via le filtre PHP up_block_switches dans votre thème ou dans des mu-plugins.', 'up'); ?></p>
+            
+            <?php if (empty($normalized_configs)): ?>
+                <div class="notice notice-info">
+                    <p><?php esc_html_e('Aucune configuration n\'est actuellement définie via le filtre up_block_switches.', 'up'); ?></p>
+                </div>
+            <?php else: ?>
+                <div class="card" style="max-width: 100%; margin-bottom: 20px;">
+                    <h2><?php esc_html_e('Configurations actuelles', 'up'); ?></h2>
+                    
+                    <?php foreach ($normalized_configs as $block_name => $controls): ?>
+                        <div style="margin-bottom: 30px;">
+                            <h3><?php echo esc_html($block_name); ?></h3>
+                            
+                            <div style="background: #f0f0f0; padding: 10px; border-radius: 4px; margin-bottom: 10px;">
+                                <strong><?php esc_html_e('Nombre de contrôles:', 'up'); ?></strong> <?php echo count($controls); ?>
+                            </div>
+                            
+                            <div style="margin-bottom: 10px;">
+                                <button type="button" class="button toggle-json" data-block="<?php echo esc_attr($block_name); ?>">
+                                    <?php esc_html_e('Afficher/Masquer le JSON', 'up'); ?>
+                                </button>
+                                <button type="button" class="button button-primary save-as-preconfig" data-block="<?php echo esc_attr($block_name); ?>">
+                                    <?php esc_html_e('Enregistrer comme préconfiguration', 'up'); ?>
+                                </button>
+                            </div>
+                            
+                            <pre class="json-display" id="json-<?php echo esc_attr(sanitize_key($block_name)); ?>" 
+                                 style="display: none; background: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 4px; overflow-x: auto; max-height: 400px;">
+<?php echo esc_html(wp_json_encode($controls, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)); ?>
+                            </pre>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+                
+                <div class="card" style="max-width: 100%;">
+                    <h2><?php esc_html_e('JSON complet', 'up'); ?></h2>
+                    <button type="button" class="button" id="toggle-full-json">
+                        <?php esc_html_e('Afficher/Masquer le JSON complet', 'up'); ?>
+                    </button>
+                    <button type="button" class="button button-primary" id="save-all-as-preconfig">
+                        <?php esc_html_e('Enregistrer tout comme préconfiguration', 'up'); ?>
+                    </button>
+                    
+                    <pre id="full-json-display" style="display: none; background: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 4px; overflow-x: auto; max-height: 600px; margin-top: 10px;">
+<?php echo esc_html(wp_json_encode($normalized_configs, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)); ?>
+                    </pre>
+                </div>
+            <?php endif; ?>
+        </div>
+        
+        <script>
+        jQuery(document).ready(function($) {
+            // Toggle JSON display pour chaque bloc
+            $('.toggle-json').on('click', function() {
+                const blockName = $(this).data('block');
+                const jsonId = '#json-' + blockName.replace(/[^a-zA-Z0-9]/g, '');
+                $(jsonId).slideToggle();
+            });
+            
+            // Toggle JSON complet
+            $('#toggle-full-json').on('click', function() {
+                $('#full-json-display').slideToggle();
+            });
+            
+            // Sauvegarder comme préconfiguration (bloc individuel)
+            $('.save-as-preconfig').on('click', function() {
+                const blockName = $(this).data('block');
+                const panelName = prompt('<?php echo esc_js(__('Nom du panneau pour cette préconfiguration:', 'up')); ?>', 'Options ' + blockName);
+                
+                if (!panelName) return;
+                
+                // Créer un formulaire pour sauvegarder
+                const form = $('<form>', {
+                    method: 'POST',
+                    action: '<?php echo esc_url(admin_url('admin-ajax.php')); ?>'
+                });
+                
+                form.append($('<input>', {
+                    type: 'hidden',
+                    name: 'action',
+                    value: 'up_ge_save_filter_as_preset'
+                }));
+                
+                form.append($('<input>', {
+                    type: 'hidden',
+                    name: 'block',
+                    value: blockName
+                }));
+                
+                form.append($('<input>', {
+                    type: 'hidden',
+                    name: 'panel',
+                    value: panelName
+                }));
+                
+                form.append($('<input>', {
+                    type: 'hidden',
+                    name: 'nonce',
+                    value: '<?php echo wp_create_nonce('up_ge_filter_preset'); ?>'
+                }));
+                
+                $('body').append(form);
+                form.submit();
+            });
+            
+            // Sauvegarder tout comme préconfiguration
+            $('#save-all-as-preconfig').on('click', function() {
+                if (!confirm('<?php echo esc_js(__('Voulez-vous sauvegarder toutes les configurations comme préconfigurations individuelles?', 'up')); ?>')) {
+                    return;
+                }
+                
+                const form = $('<form>', {
+                    method: 'POST',
+                    action: '<?php echo esc_url(admin_url('admin-ajax.php')); ?>'
+                });
+                
+                form.append($('<input>', {
+                    type: 'hidden',
+                    name: 'action',
+                    value: 'up_ge_save_all_filters_as_presets'
+                }));
+                
+                form.append($('<input>', {
+                    type: 'hidden',
+                    name: 'nonce',
+                    value: '<?php echo wp_create_nonce('up_ge_filter_preset'); ?>'
+                }));
+                
+                $('body').append(form);
+                form.submit();
+            });
+        });
+        </script>
+        <?php
     }
 
     /**
