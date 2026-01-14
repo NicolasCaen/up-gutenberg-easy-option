@@ -36,8 +36,10 @@ class Up_Block_Switches {
         add_action('wp_ajax_up_ge_save_panel_preset', [$this, 'handle_save_panel_preset']);
         add_action('wp_ajax_up_ge_save_filter_as_preset', [$this, 'handle_save_filter_as_preset']);
         add_action('wp_ajax_up_ge_save_all_filters_as_presets', [$this, 'handle_save_all_filters_as_presets']);
+        add_action('wp_ajax_up_ge_save_single_control_as_preset', [$this, 'handle_save_single_control_as_preset']);
         add_action('admin_post_up_ge_save_filter_as_preset', [$this, 'handle_save_filter_as_preset_post']);
         add_action('admin_post_up_ge_save_all_filters_as_presets', [$this, 'handle_save_all_filters_as_presets_post']);
+        add_action('admin_post_up_ge_save_single_control_as_preset', [$this, 'handle_save_single_control_as_preset_post']);
         add_action('admin_notices', [$this, 'render_admin_notices']);
     }
 
@@ -888,6 +890,133 @@ class Up_Block_Switches {
     }
 
     /**
+     * Gère la sauvegarde d'un contrôle individuel comme préconfiguration (AJAX)
+     */
+    public function handle_save_single_control_as_preset() {
+        check_ajax_referer('up_ge_filter_preset', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Accès refusé.', 'up')], 403);
+        }
+        
+        $block_name = isset($_POST['block']) ? sanitize_text_field(wp_unslash($_POST['block'])) : '';
+        $control_index = isset($_POST['control_index']) ? intval($_POST['control_index']) : -1;
+        $panel_name = isset($_POST['panel']) ? sanitize_text_field(wp_unslash($_POST['panel'])) : '';
+        
+        if (!$block_name || $control_index < 0 || !$panel_name) {
+            wp_send_json_error(['message' => __('Paramètres manquants.', 'up')], 400);
+        }
+        
+        // Récupérer les configurations du filtre
+        $filter_configs = apply_filters('up_block_switches', []);
+        $normalized_configs = $this->normalize_switches($filter_configs);
+        
+        if (!isset($normalized_configs[$block_name])) {
+            wp_send_json_error(['message' => __('Configuration de bloc non trouvée.', 'up')], 404);
+        }
+        
+        $controls = $normalized_configs[$block_name];
+        if (!isset($controls[$control_index])) {
+            wp_send_json_error(['message' => __('Contrôle non trouvé.', 'up')], 404);
+        }
+        
+        $single_control = $controls[$control_index];
+        
+        // Créer le nom du fichier pour un contrôle unique
+        $control_id = isset($single_control['id']) ? $single_control['id'] : 'control-' . $control_index;
+        $filename = sanitize_file_name(strtolower($control_id . '-' . sanitize_title($panel_name) . '.json'));
+        $path = $this->preset_file_path($filename);
+        
+        // Préparer les données de la préconfiguration avec un seul contrôle
+        $preset_data = [
+            'blocks' => [$block_name],
+            'panel' => $panel_name,
+            'controls' => [$single_control]  // Un seul contrôle dans le tableau
+        ];
+        
+        $encoded = wp_json_encode($preset_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($encoded)) {
+            wp_send_json_error(['message' => __('Impossible de sérialiser la préconfiguration.', 'up')], 500);
+        }
+        
+        $dir = $this->get_preset_dir();
+        if (!$dir) {
+            wp_send_json_error(['message' => __('Le dossier de préconfiguration est indisponible.', 'up')], 500);
+        }
+        
+        $written = file_put_contents($path, $encoded);
+        if ($written === false) {
+            wp_send_json_error(['message' => __("Échec de l'enregistrement du fichier.", 'up')], 500);
+        }
+        
+        wp_send_json_success(['message' => __('Contrôle enregistré comme préconfiguration avec succès.', 'up'), 'file' => $filename]);
+    }
+    
+    /**
+     * Gère la sauvegarde d'un contrôle individuel comme préconfiguration (POST)
+     */
+    public function handle_save_single_control_as_preset_post() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Accès refusé.', 'up'));
+        }
+        
+        check_admin_referer('up_ge_filter_preset', 'nonce');
+        
+        $block_name = isset($_POST['block']) ? sanitize_text_field(wp_unslash($_POST['block'])) : '';
+        $control_index = isset($_POST['control_index']) ? intval($_POST['control_index']) : -1;
+        $panel_name = isset($_POST['panel']) ? sanitize_text_field(wp_unslash($_POST['panel'])) : '';
+        
+        if (!$block_name || $control_index < 0 || !$panel_name) {
+            wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'error'], admin_url('admin.php')));
+            exit;
+        }
+        
+        // Récupérer les configurations du filtre
+        $filter_configs = apply_filters('up_block_switches', []);
+        $normalized_configs = $this->normalize_switches($filter_configs);
+        
+        if (!isset($normalized_configs[$block_name]) || !isset($normalized_configs[$block_name][$control_index])) {
+            wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'error'], admin_url('admin.php')));
+            exit;
+        }
+        
+        $single_control = $normalized_configs[$block_name][$control_index];
+        
+        // Créer le nom du fichier pour un contrôle unique
+        $control_id = isset($single_control['id']) ? $single_control['id'] : 'control-' . $control_index;
+        $filename = sanitize_file_name(strtolower($control_id . '-' . sanitize_title($panel_name) . '.json'));
+        $path = $this->preset_file_path($filename);
+        
+        // Préparer les données de la préconfiguration avec un seul contrôle
+        $preset_data = [
+            'blocks' => [$block_name],
+            'panel' => $panel_name,
+            'controls' => [$single_control]
+        ];
+        
+        $encoded = wp_json_encode($preset_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($encoded)) {
+            wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'error'], admin_url('admin.php')));
+            exit;
+        }
+        
+        $dir = $this->get_preset_dir();
+        if (!$dir) {
+            wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'error'], admin_url('admin.php')));
+            exit;
+        }
+        
+        $written = file_put_contents($path, $encoded);
+        if ($written === false) {
+            wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'error'], admin_url('admin.php')));
+            exit;
+        }
+        
+        wp_safe_redirect(add_query_arg(['page' => self::FILTER_PAGE_SLUG, 'up_ge_notice' => 'preset_saved'], admin_url('admin.php')));
+        exit;
+    }
+
+    /**
      * Gère la sauvegarde d'une configuration du filtre comme préconfiguration (AJAX)
      */
     public function handle_save_filter_as_preset() {
@@ -1147,20 +1276,60 @@ class Up_Block_Switches {
                     <h2><?php esc_html_e('Configurations actuelles', 'up'); ?></h2>
                     
                     <?php foreach ($normalized_configs as $block_name => $controls): ?>
-                        <div style="margin-bottom: 30px;">
+                        <div style="margin-bottom: 30px; border: 1px solid #c3c4c7; border-radius: 4px; padding: 15px;">
                             <h3><?php echo esc_html($block_name); ?></h3>
                             
-                            <div style="background: #f0f0f0; padding: 10px; border-radius: 4px; margin-bottom: 10px;">
+                            <div style="background: #f0f0f0; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
                                 <strong><?php esc_html_e('Nombre de contrôles:', 'up'); ?></strong> <?php echo count($controls); ?>
                             </div>
                             
-                            <div style="margin-bottom: 10px;">
+                            <!-- Actions pour le bloc complet -->
+                            <div style="margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #ddd;">
                                 <button type="button" class="button toggle-json" data-block="<?php echo esc_attr($block_name); ?>">
-                                    <?php esc_html_e('Afficher/Masquer le JSON', 'up'); ?>
+                                    <?php esc_html_e('Afficher/Masquer le JSON du bloc', 'up'); ?>
                                 </button>
-                                <button type="button" class="button button-primary save-as-preconfig" data-block="<?php echo esc_attr($block_name); ?>">
-                                    <?php esc_html_e('Enregistrer comme préconfiguration', 'up'); ?>
+                                <button type="button" class="button button-primary save-block-as-preconfig" data-block="<?php echo esc_attr($block_name); ?>">
+                                    <?php esc_html_e('Enregistrer tout le bloc', 'up'); ?>
                                 </button>
+                            </div>
+                            
+                            <!-- Liste des contrôles individuels -->
+                            <div style="margin-bottom: 15px;">
+                                <h4><?php esc_html_e('Contrôles individuels:', 'up'); ?></h4>
+                                <?php foreach ($controls as $index => $control): ?>
+                                    <div style="background: #fff; border: 1px solid #ddd; border-radius: 4px; padding: 10px; margin-bottom: 10px;">
+                                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                                            <div>
+                                                <strong><?php echo esc_html($control['label'] ?? $control['id'] ?? 'Sans nom'); ?></strong>
+                                                <span style="margin-left: 10px; color: #666;">
+                                                    ID: <?php echo esc_html($control['id'] ?? ''); ?> | 
+                                                    Type: <?php echo esc_html($control['type'] ?? 'toggle'); ?> | 
+                                                    Panel: <?php echo esc_html($control['panel'] ?? 'Options UP'); ?>
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <button type="button" class="button button-small toggle-control-json" 
+                                                        data-block="<?php echo esc_attr($block_name); ?>" 
+                                                        data-control-index="<?php echo esc_attr($index); ?>">
+                                                    <?php esc_html_e('JSON', 'up'); ?>
+                                                </button>
+                                                <button type="button" class="button button-small button-primary save-control-as-preconfig" 
+                                                        data-block="<?php echo esc_attr($block_name); ?>" 
+                                                        data-control-index="<?php echo esc_attr($index); ?>"
+                                                        data-control-id="<?php echo esc_attr($control['id'] ?? ''); ?>"
+                                                        data-control-label="<?php echo esc_attr($control['label'] ?? $control['id'] ?? 'control'); ?>">
+                                                    <?php esc_html_e('Sauvegarder', 'up'); ?>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- JSON du contrôle individuel -->
+                                        <pre class="control-json-display" id="control-json-<?php echo esc_attr(sanitize_key($block_name)); ?>-<?php echo esc_attr($index); ?>" 
+                                             style="display: none; background: #f6f7f7; padding: 10px; border-radius: 4px; overflow-x: auto; margin-top: 10px; font-size: 12px;">
+<?php echo esc_html(wp_json_encode($control, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)); ?>
+                                        </pre>
+                                    </div>
+                                <?php endforeach; ?>
                             </div>
                             
                             <pre class="json-display" id="json-<?php echo esc_attr(sanitize_key($block_name)); ?>" 
@@ -1196,15 +1365,75 @@ class Up_Block_Switches {
                 $(jsonId).slideToggle();
             });
             
+            // Toggle JSON pour un contrôle individuel
+            $('.toggle-control-json').on('click', function() {
+                const blockName = $(this).data('block');
+                const controlIndex = $(this).data('control-index');
+                const jsonId = '#control-json-' + blockName.replace(/[^a-zA-Z0-9]/g, '') + '-' + controlIndex;
+                $(jsonId).slideToggle();
+            });
+            
             // Toggle JSON complet
             $('#toggle-full-json').on('click', function() {
                 $('#full-json-display').slideToggle();
             });
             
-            // Sauvegarder comme préconfiguration (bloc individuel)
-            $('.save-as-preconfig').on('click', function() {
+            // Sauvegarder un contrôle individuel
+            $('.save-control-as-preconfig').on('click', function() {
                 const blockName = $(this).data('block');
-                const panelName = prompt('<?php echo esc_js(__('Nom du panneau pour cette préconfiguration:', 'up')); ?>', 'Options ' + blockName);
+                const controlIndex = $(this).data('control-index');
+                const controlId = $(this).data('control-id');
+                const controlLabel = $(this).data('control-label');
+                const defaultName = controlId || controlLabel || 'control';
+                
+                const panelName = prompt('<?php echo esc_js(__('Nom du panneau pour ce contrôle:', 'up')); ?>', defaultName);
+                
+                if (!panelName) return;
+                
+                // Créer un formulaire pour sauvegarder
+                const form = $('<form>', {
+                    method: 'POST',
+                    action: '<?php echo esc_url(admin_url('admin-ajax.php')); ?>'
+                });
+                
+                form.append($('<input>', {
+                    type: 'hidden',
+                    name: 'action',
+                    value: 'up_ge_save_single_control_as_preset'
+                }));
+                
+                form.append($('<input>', {
+                    type: 'hidden',
+                    name: 'block',
+                    value: blockName
+                }));
+                
+                form.append($('<input>', {
+                    type: 'hidden',
+                    name: 'control_index',
+                    value: controlIndex
+                }));
+                
+                form.append($('<input>', {
+                    type: 'hidden',
+                    name: 'panel',
+                    value: panelName
+                }));
+                
+                form.append($('<input>', {
+                    type: 'hidden',
+                    name: 'nonce',
+                    value: '<?php echo wp_create_nonce('up_ge_filter_preset'); ?>'
+                }));
+                
+                $('body').append(form);
+                form.submit();
+            });
+            
+            // Sauvegarder comme préconfiguration (bloc complet)
+            $('.save-block-as-preconfig').on('click', function() {
+                const blockName = $(this).data('block');
+                const panelName = prompt('<?php echo esc_js(__('Nom du panneau pour cette préconfiguration de bloc:', 'up')); ?>', 'Options ' + blockName);
                 
                 if (!panelName) return;
                 

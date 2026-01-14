@@ -109,10 +109,12 @@ add_filter('up_block_switches', function($switches) {
 ## 0.6.0 - 2025-01-14
 - Nouvelle page "Configurations du filtre" pour afficher les configurations créées via le filtre `up_block_switches`.
 - Affichage détaillé en JSON des configurations par bloc avec compteur de contrôles.
-- Possibilité d'enregistrer chaque configuration de bloc comme préconfiguration individuelle.
-- Bouton pour sauvegarder toutes les configurations du filtre comme préconfigurations d'un coup.
-- Les préconfigurations créées depuis le filtre peuvent ensuite être importées dans la configuration principale.
-- Config par type de bloc
+- **NOUVEAU**: Possibilité d'enregistrer chaque contrôle individuellement comme préconfiguration.
+- Interface améliorée avec visualisation détaillée de chaque contrôle (Label, ID, Type, Panel).
+- Bouton JSON pour afficher le code de chaque contrôle individuel.
+- Sauvegarde flexible : contrôles individuels, blocs complets ou toutes les configurations.
+- Les préconfigurations créées (contrôles uniques ou blocs) peuvent ensuite être importées dans la configuration principale.
+- Structure de fichier optimisée : `[control-id]-[panel-name].json` pour les contrôles individuels.
 
 ## 0.5.0 - 2025-11-04
 - Nouveau type `number`: génère une classe dynamique `prefixe-NUM` avec gestion optionnelle de `min`, `max`, `step`, `default` (vide = pas de classe).
