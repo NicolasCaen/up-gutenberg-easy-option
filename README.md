@@ -106,7 +106,7 @@ add_filter('up_block_switches', function($switches) {
 
 ## Changelog
 
-## 0.6.0 - 2025-01-14
+## 0.6.1 - 2025-01-14
 - Nouvelle page "Configurations du filtre" pour afficher les configurations créées via le filtre `up_block_switches`.
 - Affichage détaillé en JSON des configurations par bloc avec compteur de contrôles.
 - **NOUVEAU**: Possibilité d'enregistrer chaque contrôle individuellement comme préconfiguration.

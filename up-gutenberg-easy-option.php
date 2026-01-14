@@ -2,7 +2,7 @@
 /**
  * Plugin Name: UP gutenberg easy option
  * Description: Ajoute des switches configurables aux blocs Gutenberg pour ajouter/retirer des classes via l’inspecteur. Configurable via un filtre et exposé via l’API REST.
- * Version: 0.6.0
+ * Version: 0.6.1
  * Author: GEHIN Nicolas
  */
 
@@ -13,16 +13,19 @@ if (!defined('ABSPATH')) {
 class Up_Block_Switches {
     const REST_NAMESPACE = 'up/v1';
     const OPTION_KEY = 'up_ge_switches_config';
+    const CONTROL_SOURCES_OPTION_KEY = 'up_ge_control_sources';
     const ADMIN_PAGE_SLUG = 'up-ge-config';
     const ADMIN_MENU_SLUG = 'up-gutenberg';
     const PRESET_PAGE_SLUG = 'up-ge-preconfigs';
     const FILTER_PAGE_SLUG = 'up-ge-filter-configs';
+    const THEME_GENERATE_PAGE_SLUG = 'up-ge-theme-generate';
     const PRESET_DIR = 'prefconfig';
 
     protected $admin_page_hook = null;
     protected $preset_page_hook = null;
     protected $config_page_hook = null;
     protected $filter_page_hook = null;
+    protected $theme_generate_page_hook = null;
 
     public function __construct() {
         add_action('rest_api_init', [$this, 'register_rest_routes']);
@@ -33,6 +36,7 @@ class Up_Block_Switches {
         add_action('admin_post_up_ge_import_config', [$this, 'handle_import_config']);
         add_action('admin_post_up_ge_export_config', [$this, 'handle_export_config']);
         add_action('admin_post_up_ge_import_preset', [$this, 'handle_import_preset']);
+        add_action('admin_post_up_ge_generate_theme_root', [$this, 'handle_generate_theme_root']);
         add_action('wp_ajax_up_ge_save_panel_preset', [$this, 'handle_save_panel_preset']);
         add_action('wp_ajax_up_ge_save_filter_as_preset', [$this, 'handle_save_filter_as_preset']);
         add_action('wp_ajax_up_ge_save_all_filters_as_presets', [$this, 'handle_save_all_filters_as_presets']);
@@ -41,6 +45,178 @@ class Up_Block_Switches {
         add_action('admin_post_up_ge_save_all_filters_as_presets', [$this, 'handle_save_all_filters_as_presets_post']);
         add_action('admin_post_up_ge_save_single_control_as_preset', [$this, 'handle_save_single_control_as_preset_post']);
         add_action('admin_notices', [$this, 'render_admin_notices']);
+    }
+
+    protected function get_theme_block_option_base_dir() {
+        return trailingslashit(get_stylesheet_directory()) . 'functions/gutenberg-block-option/';
+    }
+
+    protected function get_theme_block_option_inc_dir() {
+        return $this->get_theme_block_option_base_dir() . 'inc/';
+    }
+
+    protected function get_theme_block_option_assets_dir() {
+        return $this->get_theme_block_option_base_dir() . 'assets/';
+    }
+
+    protected function ensure_theme_block_option_directories() {
+        $base = $this->get_theme_block_option_base_dir();
+        $inc = $this->get_theme_block_option_inc_dir();
+        $assets = $this->get_theme_block_option_assets_dir();
+
+        if (!file_exists($base)) {
+            wp_mkdir_p($base);
+        }
+        if (!file_exists($inc)) {
+            wp_mkdir_p($inc);
+        }
+        if (!file_exists($assets)) {
+            wp_mkdir_p($assets);
+        }
+    }
+
+    protected function block_to_slug($block_name) {
+        return str_replace('/', '-', sanitize_key($block_name));
+    }
+
+    protected function theme_control_json_filename($block_name, $control_id) {
+        $block_slug = $this->block_to_slug($block_name);
+        $control_slug = sanitize_key($control_id);
+        return sanitize_file_name($block_slug . '-' . $control_slug . '.json');
+    }
+
+    protected function theme_control_json_path($block_name, $control_id) {
+        return $this->get_theme_block_option_inc_dir() . $this->theme_control_json_filename($block_name, $control_id);
+    }
+
+    protected function load_theme_controls() {
+        $dir = $this->get_theme_block_option_inc_dir();
+        if (!is_dir($dir) || !is_readable($dir)) {
+            return [];
+        }
+
+        $files = glob($dir . '*.json');
+        if (!is_array($files) || empty($files)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($files as $file) {
+            if (!is_file($file) || !is_readable($file)) {
+                continue;
+            }
+            $raw = file_get_contents($file);
+            if (!is_string($raw) || trim($raw) === '') {
+                continue;
+            }
+            $decoded = json_decode($raw, true);
+            if (!is_array($decoded)) {
+                continue;
+            }
+            $block = isset($decoded['block']) ? (string) $decoded['block'] : '';
+            $control = isset($decoded['control']) && is_array($decoded['control']) ? $decoded['control'] : null;
+            if ($block === '' || !$control) {
+                continue;
+            }
+            $normalized = $this->normalize_control($control);
+            if (!$normalized || empty($normalized['id'])) {
+                continue;
+            }
+            if (!isset($out[$block])) {
+                $out[$block] = [];
+            }
+            $out[$block][] = $normalized;
+        }
+
+        return $this->normalize_switches($out);
+    }
+
+    protected function select_sources(array $stored, array $filtered, array $theme) {
+        $sources = get_option(self::CONTROL_SOURCES_OPTION_KEY, []);
+        if (!is_array($sources)) {
+            $sources = [];
+        }
+
+        $inStored = [];
+        foreach ($stored as $b => $controls) {
+            if (!is_array($controls)) { continue; }
+            foreach ($controls as $c) {
+                if (!is_array($c) || empty($c['id'])) { continue; }
+                $inStored[$b . '|' . $c['id']] = true;
+            }
+        }
+
+        $inFiltered = [];
+        foreach ($filtered as $b => $controls) {
+            if (!is_array($controls)) { continue; }
+            foreach ($controls as $c) {
+                if (!is_array($c) || empty($c['id'])) { continue; }
+                $inFiltered[$b . '|' . $c['id']] = true;
+            }
+        }
+
+        $inTheme = [];
+        foreach ($theme as $b => $controls) {
+            if (!is_array($controls)) { continue; }
+            foreach ($controls as $c) {
+                if (!is_array($c) || empty($c['id'])) { continue; }
+                $inTheme[$b . '|' . $c['id']] = true;
+            }
+        }
+
+        $getSource = function($key) use ($sources, $inStored, $inFiltered, $inTheme) {
+            if (isset($sources[$key]) && is_string($sources[$key]) && $sources[$key] !== '') {
+                return $sources[$key];
+            }
+            if (isset($inTheme[$key])) {
+                return 'theme';
+            }
+            if (isset($inFiltered[$key])) {
+                return 'filter';
+            }
+            if (isset($inStored[$key])) {
+                return 'plugin';
+            }
+            return 'plugin';
+        };
+
+        $storedOut = [];
+        foreach ($stored as $b => $controls) {
+            if (!is_array($controls)) { continue; }
+            foreach ($controls as $c) {
+                if (!is_array($c) || empty($c['id'])) { continue; }
+                $key = $b . '|' . $c['id'];
+                if ($getSource($key) !== 'plugin') { continue; }
+                if (!isset($storedOut[$b])) { $storedOut[$b] = []; }
+                $storedOut[$b][] = $c;
+            }
+        }
+
+        $filteredOut = [];
+        foreach ($filtered as $b => $controls) {
+            if (!is_array($controls)) { continue; }
+            foreach ($controls as $c) {
+                if (!is_array($c) || empty($c['id'])) { continue; }
+                $key = $b . '|' . $c['id'];
+                if ($getSource($key) !== 'filter') { continue; }
+                if (!isset($filteredOut[$b])) { $filteredOut[$b] = []; }
+                $filteredOut[$b][] = $c;
+            }
+        }
+
+        $themeOut = [];
+        foreach ($theme as $b => $controls) {
+            if (!is_array($controls)) { continue; }
+            foreach ($controls as $c) {
+                if (!is_array($c) || empty($c['id'])) { continue; }
+                $key = $b . '|' . $c['id'];
+                if ($getSource($key) !== 'theme') { continue; }
+                if (!isset($themeOut[$b])) { $themeOut[$b] = []; }
+                $themeOut[$b][] = $c;
+            }
+        }
+
+        return [$storedOut, $filteredOut, $themeOut];
     }
 
     public function enqueue_editor_assets() {
@@ -411,6 +587,16 @@ class Up_Block_Switches {
             self::FILTER_PAGE_SLUG,
             [$this, 'render_filter_configs_page']
         );
+
+        // Sous-menu: Générer dans le thème
+        $this->theme_generate_page_hook = add_submenu_page(
+            self::ADMIN_MENU_SLUG,
+            __('Générer dans le thème', 'up'),
+            __('Générer dans le thème', 'up'),
+            'manage_options',
+            self::THEME_GENERATE_PAGE_SLUG,
+            [$this, 'render_theme_generate_page']
+        );
     }
 
     public function enqueue_admin_assets($hook) {
@@ -619,6 +805,287 @@ class Up_Block_Switches {
             </form>
         </div>
         <?php
+    }
+
+    public function render_theme_generate_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Accès refusé.', 'up'));
+        }
+
+        $stored = $this->normalize_switches($this->get_option_blocks());
+        $filtered = $this->normalize_switches(apply_filters('up_block_switches', []));
+        $theme = $this->load_theme_controls();
+        $all = $this->merge_configs($stored, $filtered, $theme);
+
+        $sources = get_option(self::CONTROL_SOURCES_OPTION_KEY, []);
+        if (!is_array($sources)) {
+            $sources = [];
+        }
+
+        ?>
+        <div class="wrap">
+            <h1><?php esc_html_e('Générer dans le thème', 'up'); ?></h1>
+            <p><?php esc_html_e('Générez des fichiers dans le thème pour conserver les options sans le plugin.', 'up'); ?></p>
+
+            <div class="notice notice-info"><p><code><?php echo esc_html($this->get_theme_block_option_base_dir()); ?></code></p></div>
+
+            <?php if (empty($all)): ?>
+                <div class="notice notice-warning"><p><?php esc_html_e('Aucune option disponible.', 'up'); ?></p></div>
+            <?php else: ?>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <?php wp_nonce_field('up_ge_generate_theme', 'up_ge_generate_theme_nonce'); ?>
+                    <input type="hidden" name="action" value="up_ge_generate_theme_root" />
+
+                    <table class="wp-list-table widefat fixed striped">
+                        <thead>
+                            <tr>
+                                <th scope="col" class="check-column"><input type="checkbox" id="up-ge-select-all-controls" /></th>
+                                <th scope="col"><?php esc_html_e('Bloc', 'up'); ?></th>
+                                <th scope="col"><?php esc_html_e('ID', 'up'); ?></th>
+                                <th scope="col"><?php esc_html_e('Label', 'up'); ?></th>
+                                <th scope="col"><?php esc_html_e('Type', 'up'); ?></th>
+                                <th scope="col"><?php esc_html_e('Source', 'up'); ?></th>
+                                <th scope="col"><?php esc_html_e('Statut (thème)', 'up'); ?></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($all as $block_name => $controls): ?>
+                                <?php if (!is_array($controls)) { continue; } ?>
+                                <?php foreach ($controls as $control): ?>
+                                    <?php
+                                    if (!is_array($control) || empty($control['id'])) { continue; }
+                                    $cid = (string) $control['id'];
+                                    $key = $block_name . '|' . $cid;
+                                    $file_path = $this->theme_control_json_path($block_name, $cid);
+                                    $exists = file_exists($file_path);
+                                    $source = isset($sources[$key]) && is_string($sources[$key]) ? $sources[$key] : ($exists ? 'theme' : 'plugin');
+                                    ?>
+                                    <tr>
+                                        <th scope="row" class="check-column">
+                                            <input type="checkbox" class="up-ge-control-checkbox" name="selected_controls[]" value="<?php echo esc_attr($key); ?>" />
+                                        </th>
+                                        <td><code><?php echo esc_html($block_name); ?></code></td>
+                                        <td><code><?php echo esc_html($cid); ?></code></td>
+                                        <td><?php echo esc_html(isset($control['label']) ? $control['label'] : $cid); ?></td>
+                                        <td><?php echo esc_html(isset($control['type']) ? $control['type'] : 'toggle'); ?></td>
+                                        <td>
+                                            <select name="sources[<?php echo esc_attr($key); ?>]">
+                                                <option value="plugin" <?php selected($source, 'plugin'); ?>><?php esc_html_e('Plugin', 'up'); ?></option>
+                                                <option value="filter" <?php selected($source, 'filter'); ?>><?php esc_html_e('Filtre', 'up'); ?></option>
+                                                <option value="theme" <?php selected($source, 'theme'); ?>><?php esc_html_e('Thème', 'up'); ?></option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <?php if ($exists): ?>
+                                                <span class="dashicons dashicons-yes-alt" style="color: green;"></span>
+                                            <?php else: ?>
+                                                <span class="dashicons dashicons-minus" style="color: orange;"></span>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+
+                    <p style="margin-top: 12px;">
+                        <button type="submit" class="button button-primary"><?php esc_html_e('Générer dans le thème (JSON + root.php + class + assets)', 'up'); ?></button>
+                    </p>
+                </form>
+            <?php endif; ?>
+        </div>
+
+        <script>
+        jQuery(function($){
+            $('#up-ge-select-all-controls').on('change', function(){
+                $('.up-ge-control-checkbox').prop('checked', $(this).prop('checked'));
+            });
+        });
+        </script>
+        <?php
+    }
+
+    protected function write_theme_loader_files() {
+        $this->ensure_theme_block_option_directories();
+
+        $root = $this->get_theme_block_option_base_dir() . 'root.php';
+        $class = $this->get_theme_block_option_base_dir() . 'class-up-gutenberg-block-option.php';
+        $assetEditor = $this->get_theme_block_option_assets_dir() . 'editor.js';
+
+        $pluginEditor = __DIR__ . '/assets/editor.js';
+        if (file_exists($pluginEditor)) {
+            file_put_contents($assetEditor, file_get_contents($pluginEditor));
+        }
+
+        $classCode = "<?php\n";
+        $classCode .= "if (!defined('ABSPATH')) { exit; }\n";
+        $classCode .= "class UP_Gutenberg_Block_Option {\n";
+        $classCode .= "    private static \$instance = null;\n";
+        $classCode .= "    public static function get_instance() {\n";
+        $classCode .= "        if (null === self::\$instance) { self::\$instance = new self(); }\n";
+        $classCode .= "        return self::\$instance;\n";
+        $classCode .= "    }\n";
+        $classCode .= "    private function __construct() {\n";
+        $classCode .= "        add_action('rest_api_init', array(\$this, 'register_rest'));\n";
+        $classCode .= "        add_action('enqueue_block_editor_assets', array(\$this, 'enqueue_editor'));\n";
+        $classCode .= "    }\n";
+        $classCode .= "    public function enqueue_editor() {\n";
+        $classCode .= "        if (wp_script_is('up-block-switches-editor', 'registered') || wp_script_is('up-block-switches-editor', 'enqueued')) { return; }\n";
+        $classCode .= "        \$src = get_stylesheet_directory_uri() . '/functions/gutenberg-block-option/assets/editor.js';\n";
+        $classCode .= "        \$deps = array('wp-blocks','wp-i18n','wp-element','wp-components','wp-compose','wp-data','wp-edit-post','wp-plugins','wp-api-fetch','wp-hooks','wp-block-editor');\n";
+        $classCode .= "        wp_enqueue_script('up-block-switches-editor', \$src, \$deps, filemtime(__DIR__ . '/assets/editor.js'), true);\n";
+        $classCode .= "        \$nonce = wp_create_nonce('wp_rest');\n";
+        $classCode .= "        wp_add_inline_script('wp-api-fetch', 'wp.apiFetch.use( wp.apiFetch.createNonceMiddleware( \"' . \$nonce . '\" ) );');\n";
+        $classCode .= "    }\n";
+        $classCode .= "    public function register_rest() {\n";
+        $classCode .= "        register_rest_route('up/v1', '/switches', array(\n";
+        $classCode .= "            'methods' => 'GET',\n";
+        $classCode .= "            'callback' => array(\$this, 'get_switches'),\n";
+        $classCode .= "            'permission_callback' => function(){ return current_user_can('edit_posts'); },\n";
+        $classCode .= "        ));\n";
+        $classCode .= "    }\n";
+        $classCode .= "    public function get_switches(\WP_REST_Request \$request) {\n";
+        $classCode .= "        \$sources = get_option('up_ge_control_sources', array());\n";
+        $classCode .= "        if (!is_array(\$sources)) { \$sources = array(); }\n";
+        $classCode .= "\n";
+        $classCode .= "        // 1) Controls du thème (JSON)\n";
+        $classCode .= "        \$themeControls = array();\n";
+        $classCode .= "        \$dir = __DIR__ . '/inc/';\n";
+        $classCode .= "        \$files = glob(\$dir . '*.json');\n";
+        $classCode .= "        if (is_array(\$files)) {\n";
+        $classCode .= "            foreach (\$files as \$file) {\n";
+        $classCode .= "                if (!is_file(\$file) || !is_readable(\$file)) { continue; }\n";
+        $classCode .= "                \$raw = file_get_contents(\$file);\n";
+        $classCode .= "                \$decoded = json_decode(\$raw, true);\n";
+        $classCode .= "                if (!is_array(\$decoded) || empty(\$decoded['block']) || empty(\$decoded['control']) || !is_array(\$decoded['control'])) { continue; }\n";
+        $classCode .= "                \$block = (string) \$decoded['block'];\n";
+        $classCode .= "                \$control = \$decoded['control'];\n";
+        $classCode .= "                if (empty(\$control['id'])) { continue; }\n";
+        $classCode .= "                \$key = \$block . '|' . (string)\$control['id'];\n";
+        $classCode .= "                \$themeControls[\$key] = array('block' => \$block, 'control' => \$control);\n";
+        $classCode .= "            }\n";
+        $classCode .= "        }\n";
+        $classCode .= "\n";
+        $classCode .= "        // 2) Controls du filtre\n";
+        $classCode .= "        \$filterControls = array();\n";
+        $classCode .= "        \$filtered = apply_filters('up_block_switches', array());\n";
+        $classCode .= "        if (is_array(\$filtered)) {\n";
+        $classCode .= "            foreach (\$filtered as \$b => \$controls) {\n";
+        $classCode .= "                if (!is_array(\$controls)) { continue; }\n";
+        $classCode .= "                foreach (\$controls as \$c) {\n";
+        $classCode .= "                    if (!is_array(\$c) || empty(\$c['id'])) { continue; }\n";
+        $classCode .= "                    \$key = (string)\$b . '|' . (string)\$c['id'];\n";
+        $classCode .= "                    \$filterControls[\$key] = array('block' => (string)\$b, 'control' => \$c);\n";
+        $classCode .= "                }\n";
+        $classCode .= "            }\n";
+        $classCode .= "        }\n";
+        $classCode .= "\n";
+        $classCode .= "        // 3) Résolution de source et construction\n";
+        $classCode .= "        \$allKeys = array_unique(array_merge(array_keys(\$themeControls), array_keys(\$filterControls)));\n";
+        $classCode .= "        \$out = array();\n";
+        $classCode .= "        foreach (\$allKeys as \$key) {\n";
+        $classCode .= "            \$wanted = isset(\$sources[\$key]) ? (string)\$sources[\$key] : '';\n";
+        $classCode .= "            if (\$wanted !== 'theme' && \$wanted !== 'filter' && \$wanted !== 'plugin') {\n";
+        $classCode .= "                \$wanted = isset(\$themeControls[\$key]) ? 'theme' : 'filter';\n";
+        $classCode .= "            }\n";
+        $classCode .= "            // plugin n'existe pas ici: fallback theme > filter\n";
+        $classCode .= "            if (\$wanted === 'plugin') {\n";
+        $classCode .= "                \$wanted = isset(\$themeControls[\$key]) ? 'theme' : 'filter';\n";
+        $classCode .= "            }\n";
+        $classCode .= "\n";
+        $classCode .= "            \$entry = null;\n";
+        $classCode .= "            if (\$wanted === 'theme' && isset(\$themeControls[\$key])) {\n";
+        $classCode .= "                \$entry = \$themeControls[\$key];\n";
+        $classCode .= "            } elseif (\$wanted === 'filter' && isset(\$filterControls[\$key])) {\n";
+        $classCode .= "                \$entry = \$filterControls[\$key];\n";
+        $classCode .= "            }\n";
+        $classCode .= "\n";
+        $classCode .= "            if (!\$entry) {\n";
+        $classCode .= "                // fallback si la source choisie n'est pas dispo\n";
+        $classCode .= "                if (isset(\$themeControls[\$key])) { \$entry = \$themeControls[\$key]; }\n";
+        $classCode .= "                elseif (isset(\$filterControls[\$key])) { \$entry = \$filterControls[\$key]; }\n";
+        $classCode .= "            }\n";
+        $classCode .= "            if (!\$entry) { continue; }\n";
+        $classCode .= "\n";
+        $classCode .= "            \$block = (string)\$entry['block'];\n";
+        $classCode .= "            \$control = \$entry['control'];\n";
+        $classCode .= "            if (!isset(\$out[\$block])) { \$out[\$block] = array(); }\n";
+        $classCode .= "            \$out[\$block][] = \$control;\n";
+        $classCode .= "        }\n";
+        $classCode .= "\n";
+        $classCode .= "        return new \WP_REST_Response(\$out, 200);\n";
+        $classCode .= "    }\n";
+        $classCode .= "}\n";
+        $classCode .= "\n";
+        $classCode .= "if (!class_exists('Up_Block_Switches')) {\n";
+            $classCode .= "    UP_Gutenberg_Block_Option::get_instance();\n";
+        $classCode .= "}\n";
+        file_put_contents($class, $classCode);
+
+        $rootCode = "<?php\n";
+        $rootCode .= "if (!defined('ABSPATH')) { exit; }\n";
+        $rootCode .= "if (file_exists(__DIR__ . '/class-up-gutenberg-block-option.php')) { include_once __DIR__ . '/class-up-gutenberg-block-option.php'; }\n";
+        file_put_contents($root, $rootCode);
+    }
+
+    protected function write_theme_control_json($block, array $control) {
+        if (empty($control['id'])) {
+            return false;
+        }
+        $this->ensure_theme_block_option_directories();
+        $path = $this->theme_control_json_path($block, $control['id']);
+        $payload = ['block' => $block, 'control' => $control];
+        $encoded = wp_json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($encoded)) {
+            return false;
+        }
+        return file_put_contents($path, $encoded) !== false;
+    }
+
+    public function handle_generate_theme_root() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Accès refusé.', 'up'));
+        }
+        if (!isset($_POST['up_ge_generate_theme_nonce']) || !wp_verify_nonce($_POST['up_ge_generate_theme_nonce'], 'up_ge_generate_theme')) {
+            wp_die(__('Nonce invalide.', 'up'));
+        }
+
+        $sources = isset($_POST['sources']) && is_array($_POST['sources']) ? wp_unslash($_POST['sources']) : [];
+        $sourcesClean = [];
+        foreach ($sources as $k => $v) {
+            $key = sanitize_text_field($k);
+            $val = sanitize_key($v);
+            if (!in_array($val, ['plugin', 'filter', 'theme'], true)) { continue; }
+            $sourcesClean[$key] = $val;
+        }
+        update_option(self::CONTROL_SOURCES_OPTION_KEY, $sourcesClean);
+
+        $selected = isset($_POST['selected_controls']) && is_array($_POST['selected_controls']) ? array_map('sanitize_text_field', wp_unslash($_POST['selected_controls'])) : [];
+        if (!empty($selected)) {
+            $stored = $this->normalize_switches($this->get_option_blocks());
+            $filtered = $this->normalize_switches(apply_filters('up_block_switches', []));
+            $theme = $this->load_theme_controls();
+            $all = $this->merge_configs($stored, $filtered, $theme);
+
+            foreach ($selected as $key) {
+                $parts = explode('|', $key, 2);
+                if (count($parts) !== 2) { continue; }
+                $block = sanitize_text_field($parts[0]);
+                $cid = sanitize_key($parts[1]);
+                if (!$block || !$cid) { continue; }
+                if (!isset($all[$block]) || !is_array($all[$block])) { continue; }
+                foreach ($all[$block] as $c) {
+                    if (!is_array($c) || empty($c['id']) || $c['id'] !== $cid) { continue; }
+                    $this->write_theme_control_json($block, $c);
+                    break;
+                }
+            }
+
+            $this->write_theme_loader_files();
+        }
+
+        wp_safe_redirect(add_query_arg(['page' => self::THEME_GENERATE_PAGE_SLUG], admin_url('admin.php')));
+        exit;
     }
 
     public function handle_save_config() {
@@ -1384,7 +1851,9 @@ class Up_Block_Switches {
                 const controlIndex = $(this).data('control-index');
                 const controlId = $(this).data('control-id');
                 const controlLabel = $(this).data('control-label');
-                const defaultName = controlId || controlLabel || 'control';
+                const blockSlug = String(blockName).toLowerCase().replace(/\//g, '-').replace(/[^a-z0-9-]/g, '');
+                const idSlug = String(controlId || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+                const defaultName = (blockSlug && idSlug) ? (blockSlug + '-' + idSlug) : (controlId || controlLabel || 'control');
                 
                 const panelName = prompt('<?php echo esc_js(__('Nom du panneau pour ce contrôle:', 'up')); ?>', defaultName);
                 
@@ -1527,7 +1996,9 @@ class Up_Block_Switches {
     public function get_switches(\WP_REST_Request $request) {
         $stored = $this->normalize_switches($this->get_option_blocks());
         $filtered = $this->normalize_switches(apply_filters('up_block_switches', []));
-        $merged = $this->merge_configs($stored, $filtered);
+        $theme = $this->load_theme_controls();
+        [$stored, $filtered, $theme] = $this->select_sources($stored, $filtered, $theme);
+        $merged = $this->merge_configs($stored, $filtered, $theme);
 
         // Enrichir les contrôles palette avec des options dérivées du theme.json
         foreach ($merged as $block => &$controls) {
