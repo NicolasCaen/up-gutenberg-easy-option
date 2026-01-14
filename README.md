@@ -110,6 +110,7 @@ add_filter('up_block_switches', function($switches) {
 - Nouvelle page "Configurations du filtre" pour afficher les configurations créées via le filtre `up_block_switches`.
 - Affichage détaillé en JSON des configurations par bloc avec compteur de contrôles.
 - **NOUVEAU**: Possibilité d'enregistrer chaque contrôle individuellement comme préconfiguration.
+- **NOUVEAU**: Page "Générer dans le thème" pour exporter les options dans le thème (JSON + root.php + class + assets) afin de conserver la fonctionnalité même si le plugin est désactivé.
 - Interface améliorée avec visualisation détaillée de chaque contrôle (Label, ID, Type, Panel).
 - Bouton JSON pour afficher le code de chaque contrôle individuel.
 - Sauvegarde flexible : contrôles individuels, blocs complets ou toutes les configurations.
