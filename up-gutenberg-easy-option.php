@@ -2,7 +2,7 @@
 /**
  * Plugin Name: UP gutenberg easy option
  * Description: Ajoute des switches configurables aux blocs Gutenberg pour ajouter/retirer des classes via l’inspecteur. Configurable via un filtre et exposé via l’API REST.
- * Version: 0.6.1
+ * Version: 0.6.2
  * Author: GEHIN Nicolas
  */
 
@@ -14,6 +14,7 @@ class Up_Block_Switches {
     const REST_NAMESPACE = 'up/v1';
     const OPTION_KEY = 'up_ge_switches_config';
     const CONTROL_SOURCES_OPTION_KEY = 'up_ge_control_sources';
+    const SOURCE_MODE_OPTION_KEY = 'up_ge_source_mode';
     const ADMIN_PAGE_SLUG = 'up-ge-config';
     const ADMIN_MENU_SLUG = 'up-gutenberg';
     const PRESET_PAGE_SLUG = 'up-ge-preconfigs';
@@ -217,6 +218,18 @@ class Up_Block_Switches {
         }
 
         return [$storedOut, $filteredOut, $themeOut];
+    }
+
+    protected function get_source_mode() {
+        $mode = get_option(self::SOURCE_MODE_OPTION_KEY, 'merge');
+        if (!is_string($mode)) {
+            $mode = 'merge';
+        }
+        $mode = sanitize_key($mode);
+        if (!in_array($mode, ['plugin', 'filter', 'theme', 'merge'], true)) {
+            $mode = 'merge';
+        }
+        return $mode;
     }
 
     public function enqueue_editor_assets() {
@@ -817,9 +830,24 @@ class Up_Block_Switches {
         $theme = $this->load_theme_controls();
         $all = $this->merge_configs($stored, $filtered, $theme);
 
-        $sources = get_option(self::CONTROL_SOURCES_OPTION_KEY, []);
-        if (!is_array($sources)) {
-            $sources = [];
+        $mode = $this->get_source_mode();
+
+        $storedKeys = [];
+        foreach ($stored as $b => $controls) {
+            if (!is_array($controls)) { continue; }
+            foreach ($controls as $c) {
+                if (!is_array($c) || empty($c['id'])) { continue; }
+                $storedKeys[$b . '|' . $c['id']] = true;
+            }
+        }
+
+        $filteredKeys = [];
+        foreach ($filtered as $b => $controls) {
+            if (!is_array($controls)) { continue; }
+            foreach ($controls as $c) {
+                if (!is_array($c) || empty($c['id'])) { continue; }
+                $filteredKeys[$b . '|' . $c['id']] = true;
+            }
         }
 
         ?>
@@ -836,6 +864,16 @@ class Up_Block_Switches {
                     <?php wp_nonce_field('up_ge_generate_theme', 'up_ge_generate_theme_nonce'); ?>
                     <input type="hidden" name="action" value="up_ge_generate_theme_root" />
 
+                    <p>
+                        <label for="up-ge-source-mode"><strong><?php esc_html_e('Mode de source global', 'up'); ?></strong></label>
+                        <select id="up-ge-source-mode" name="source_mode">
+                            <option value="merge" <?php selected($mode, 'merge'); ?>><?php esc_html_e('Merge (plugin + filtre + thème)', 'up'); ?></option>
+                            <option value="plugin" <?php selected($mode, 'plugin'); ?>><?php esc_html_e('Plugin (config enregistrée)', 'up'); ?></option>
+                            <option value="filter" <?php selected($mode, 'filter'); ?>><?php esc_html_e('Filtre (up_block_switches)', 'up'); ?></option>
+                            <option value="theme" <?php selected($mode, 'theme'); ?>><?php esc_html_e('Thème (JSON exportés)', 'up'); ?></option>
+                        </select>
+                    </p>
+
                     <table class="wp-list-table widefat fixed striped">
                         <thead>
                             <tr>
@@ -844,8 +882,9 @@ class Up_Block_Switches {
                                 <th scope="col"><?php esc_html_e('ID', 'up'); ?></th>
                                 <th scope="col"><?php esc_html_e('Label', 'up'); ?></th>
                                 <th scope="col"><?php esc_html_e('Type', 'up'); ?></th>
-                                <th scope="col"><?php esc_html_e('Source', 'up'); ?></th>
-                                <th scope="col"><?php esc_html_e('Statut (thème)', 'up'); ?></th>
+                                <th scope="col"><?php esc_html_e('Plugin', 'up'); ?></th>
+                                <th scope="col"><?php esc_html_e('Filtre', 'up'); ?></th>
+                                <th scope="col"><?php esc_html_e('Thème', 'up'); ?></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -858,7 +897,8 @@ class Up_Block_Switches {
                                     $key = $block_name . '|' . $cid;
                                     $file_path = $this->theme_control_json_path($block_name, $cid);
                                     $exists = file_exists($file_path);
-                                    $source = isset($sources[$key]) && is_string($sources[$key]) ? $sources[$key] : ($exists ? 'theme' : 'plugin');
+                                    $inStored = isset($storedKeys[$key]);
+                                    $inFiltered = isset($filteredKeys[$key]);
                                     ?>
                                     <tr>
                                         <th scope="row" class="check-column">
@@ -869,11 +909,18 @@ class Up_Block_Switches {
                                         <td><?php echo esc_html(isset($control['label']) ? $control['label'] : $cid); ?></td>
                                         <td><?php echo esc_html(isset($control['type']) ? $control['type'] : 'toggle'); ?></td>
                                         <td>
-                                            <select name="sources[<?php echo esc_attr($key); ?>]">
-                                                <option value="plugin" <?php selected($source, 'plugin'); ?>><?php esc_html_e('Plugin', 'up'); ?></option>
-                                                <option value="filter" <?php selected($source, 'filter'); ?>><?php esc_html_e('Filtre', 'up'); ?></option>
-                                                <option value="theme" <?php selected($source, 'theme'); ?>><?php esc_html_e('Thème', 'up'); ?></option>
-                                            </select>
+                                            <?php if ($inStored): ?>
+                                                <span class="dashicons dashicons-yes-alt" style="color: green;"></span>
+                                            <?php else: ?>
+                                                <span class="dashicons dashicons-minus" style="color: orange;"></span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <?php if ($inFiltered): ?>
+                                                <span class="dashicons dashicons-yes-alt" style="color: green;"></span>
+                                            <?php else: ?>
+                                                <span class="dashicons dashicons-minus" style="color: orange;"></span>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <?php if ($exists): ?>
@@ -945,11 +992,13 @@ class Up_Block_Switches {
         $classCode .= "        ));\n";
         $classCode .= "    }\n";
         $classCode .= "    public function get_switches(\WP_REST_Request \$request) {\n";
-        $classCode .= "        \$sources = get_option('up_ge_control_sources', array());\n";
-        $classCode .= "        if (!is_array(\$sources)) { \$sources = array(); }\n";
+        $classCode .= "        \$mode = get_option('up_ge_source_mode', 'merge');\n";
+        $classCode .= "        if (!is_string(\$mode)) { \$mode = 'merge'; }\n";
+        $classCode .= "        \$mode = sanitize_key(\$mode);\n";
+        $classCode .= "        if (\$mode !== 'plugin' && \$mode !== 'filter' && \$mode !== 'theme' && \$mode !== 'merge') { \$mode = 'merge'; }\n";
         $classCode .= "\n";
         $classCode .= "        // 1) Controls du thème (JSON)\n";
-        $classCode .= "        \$themeControls = array();\n";
+        $classCode .= "        \$themeOut = array();\n";
         $classCode .= "        \$dir = __DIR__ . '/inc/';\n";
         $classCode .= "        \$files = glob(\$dir . '*.json');\n";
         $classCode .= "        if (is_array(\$files)) {\n";
@@ -961,59 +1010,52 @@ class Up_Block_Switches {
         $classCode .= "                \$block = (string) \$decoded['block'];\n";
         $classCode .= "                \$control = \$decoded['control'];\n";
         $classCode .= "                if (empty(\$control['id'])) { continue; }\n";
-        $classCode .= "                \$key = \$block . '|' . (string)\$control['id'];\n";
-        $classCode .= "                \$themeControls[\$key] = array('block' => \$block, 'control' => \$control);\n";
+        $classCode .= "                if (!isset(\$themeOut[\$block])) { \$themeOut[\$block] = array(); }\n";
+        $classCode .= "                \$themeOut[\$block][] = \$control;\n";
         $classCode .= "            }\n";
         $classCode .= "        }\n";
         $classCode .= "\n";
         $classCode .= "        // 2) Controls du filtre\n";
-        $classCode .= "        \$filterControls = array();\n";
+        $classCode .= "        \$filterOut = array();\n";
         $classCode .= "        \$filtered = apply_filters('up_block_switches', array());\n";
         $classCode .= "        if (is_array(\$filtered)) {\n";
         $classCode .= "            foreach (\$filtered as \$b => \$controls) {\n";
         $classCode .= "                if (!is_array(\$controls)) { continue; }\n";
-        $classCode .= "                foreach (\$controls as \$c) {\n";
-        $classCode .= "                    if (!is_array(\$c) || empty(\$c['id'])) { continue; }\n";
-        $classCode .= "                    \$key = (string)\$b . '|' . (string)\$c['id'];\n";
-        $classCode .= "                    \$filterControls[\$key] = array('block' => (string)\$b, 'control' => \$c);\n";
+        $classCode .= "                \$filterOut[(string)\$b] = \$controls;\n";
+        $classCode .= "            }\n";
+        $classCode .= "        }\n";
+        $classCode .= "\n";
+        $classCode .= "        // 3) Controls du plugin (option WP, même si le plugin est désactivé)\n";
+        $classCode .= "        \$pluginOut = get_option('up_ge_switches_config', array());\n";
+        $classCode .= "        if (!is_array(\$pluginOut)) { \$pluginOut = array(); }\n";
+        $classCode .= "\n";
+        $classCode .= "        if (\$mode === 'plugin') { return new \\WP_REST_Response(\$pluginOut, 200); }\n";
+        $classCode .= "        if (\$mode === 'filter') { return new \\WP_REST_Response(\$filterOut, 200); }\n";
+        $classCode .= "        if (\$mode === 'theme') { return new \\WP_REST_Response(\$themeOut, 200); }\n";
+        $classCode .= "\n";
+        $classCode .= "        // merge: plugin + filtre + thème (thème override filtre override plugin)\n";
+        $classCode .= "        \$merged = array();\n";
+        $classCode .= "        foreach (array(\$pluginOut, \$filterOut, \$themeOut) as \$conf) {\n";
+        $classCode .= "            if (!is_array(\$conf)) { continue; }\n";
+        $classCode .= "            foreach (\$conf as \$block => \$controls) {\n";
+        $classCode .= "                if (!is_array(\$controls)) { continue; }\n";
+        $classCode .= "                if (!isset(\$merged[\$block])) { \$merged[\$block] = array(); }\n";
+        $classCode .= "                foreach (\$controls as \$control) {\n";
+        $classCode .= "                    if (!is_array(\$control) || empty(\$control['id'])) { continue; }\n";
+        $classCode .= "                    \$found = null;\n";
+        $classCode .= "                    foreach (\$merged[\$block] as \$i => \$existing) {\n";
+        $classCode .= "                        if (is_array(\$existing) && isset(\$existing['id']) && \$existing['id'] === \$control['id']) { \$found = \$i; break; }\n";
+        $classCode .= "                    }\n";
+        $classCode .= "                    if (null !== \$found) {\n";
+        $classCode .= "                        \$merged[\$block][\$found] = array_merge(\$merged[\$block][\$found], \$control);\n";
+        $classCode .= "                    } else {\n";
+        $classCode .= "                        \$merged[\$block][] = \$control;\n";
+        $classCode .= "                    }\n";
         $classCode .= "                }\n";
         $classCode .= "            }\n";
         $classCode .= "        }\n";
         $classCode .= "\n";
-        $classCode .= "        // 3) Résolution de source et construction\n";
-        $classCode .= "        \$allKeys = array_unique(array_merge(array_keys(\$themeControls), array_keys(\$filterControls)));\n";
-        $classCode .= "        \$out = array();\n";
-        $classCode .= "        foreach (\$allKeys as \$key) {\n";
-        $classCode .= "            \$wanted = isset(\$sources[\$key]) ? (string)\$sources[\$key] : '';\n";
-        $classCode .= "            if (\$wanted !== 'theme' && \$wanted !== 'filter' && \$wanted !== 'plugin') {\n";
-        $classCode .= "                \$wanted = isset(\$themeControls[\$key]) ? 'theme' : 'filter';\n";
-        $classCode .= "            }\n";
-        $classCode .= "            // plugin n'existe pas ici: fallback theme > filter\n";
-        $classCode .= "            if (\$wanted === 'plugin') {\n";
-        $classCode .= "                \$wanted = isset(\$themeControls[\$key]) ? 'theme' : 'filter';\n";
-        $classCode .= "            }\n";
-        $classCode .= "\n";
-        $classCode .= "            \$entry = null;\n";
-        $classCode .= "            if (\$wanted === 'theme' && isset(\$themeControls[\$key])) {\n";
-        $classCode .= "                \$entry = \$themeControls[\$key];\n";
-        $classCode .= "            } elseif (\$wanted === 'filter' && isset(\$filterControls[\$key])) {\n";
-        $classCode .= "                \$entry = \$filterControls[\$key];\n";
-        $classCode .= "            }\n";
-        $classCode .= "\n";
-        $classCode .= "            if (!\$entry) {\n";
-        $classCode .= "                // fallback si la source choisie n'est pas dispo\n";
-        $classCode .= "                if (isset(\$themeControls[\$key])) { \$entry = \$themeControls[\$key]; }\n";
-        $classCode .= "                elseif (isset(\$filterControls[\$key])) { \$entry = \$filterControls[\$key]; }\n";
-        $classCode .= "            }\n";
-        $classCode .= "            if (!\$entry) { continue; }\n";
-        $classCode .= "\n";
-        $classCode .= "            \$block = (string)\$entry['block'];\n";
-        $classCode .= "            \$control = \$entry['control'];\n";
-        $classCode .= "            if (!isset(\$out[\$block])) { \$out[\$block] = array(); }\n";
-        $classCode .= "            \$out[\$block][] = \$control;\n";
-        $classCode .= "        }\n";
-        $classCode .= "\n";
-        $classCode .= "        return new \WP_REST_Response(\$out, 200);\n";
+        $classCode .= "        return new \\WP_REST_Response(\$merged, 200);\n";
         $classCode .= "    }\n";
         $classCode .= "}\n";
         $classCode .= "\n";
@@ -1050,15 +1092,11 @@ class Up_Block_Switches {
             wp_die(__('Nonce invalide.', 'up'));
         }
 
-        $sources = isset($_POST['sources']) && is_array($_POST['sources']) ? wp_unslash($_POST['sources']) : [];
-        $sourcesClean = [];
-        foreach ($sources as $k => $v) {
-            $key = sanitize_text_field($k);
-            $val = sanitize_key($v);
-            if (!in_array($val, ['plugin', 'filter', 'theme'], true)) { continue; }
-            $sourcesClean[$key] = $val;
+        $mode = isset($_POST['source_mode']) ? sanitize_key(wp_unslash($_POST['source_mode'])) : 'merge';
+        if (!in_array($mode, ['plugin', 'filter', 'theme', 'merge'], true)) {
+            $mode = 'merge';
         }
-        update_option(self::CONTROL_SOURCES_OPTION_KEY, $sourcesClean);
+        update_option(self::SOURCE_MODE_OPTION_KEY, $mode);
 
         $selected = isset($_POST['selected_controls']) && is_array($_POST['selected_controls']) ? array_map('sanitize_text_field', wp_unslash($_POST['selected_controls'])) : [];
         if (!empty($selected)) {
@@ -1997,8 +2035,17 @@ class Up_Block_Switches {
         $stored = $this->normalize_switches($this->get_option_blocks());
         $filtered = $this->normalize_switches(apply_filters('up_block_switches', []));
         $theme = $this->load_theme_controls();
-        [$stored, $filtered, $theme] = $this->select_sources($stored, $filtered, $theme);
-        $merged = $this->merge_configs($stored, $filtered, $theme);
+
+        $mode = $this->get_source_mode();
+        if ($mode === 'plugin') {
+            $merged = $stored;
+        } elseif ($mode === 'filter') {
+            $merged = $filtered;
+        } elseif ($mode === 'theme') {
+            $merged = $theme;
+        } else {
+            $merged = $this->merge_configs($stored, $filtered, $theme);
+        }
 
         // Enrichir les contrôles palette avec des options dérivées du theme.json
         foreach ($merged as $block => &$controls) {

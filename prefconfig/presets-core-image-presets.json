@@ -1,0 +1,33 @@
+{
+    "blocks": [
+        "core/image"
+    ],
+    "panel": "core-image-presets",
+    "controls": [
+        {
+            "type": "select",
+            "id": "presets",
+            "label": "Presets",
+            "options": [
+                {
+                    "id": "top-52-left-50percent",
+                    "label": "1/1 400px - Décalage Top 52px Left 50%",
+                    "classes": [
+                        "is-style-400",
+                        "has-decal-1"
+                    ],
+                    "class": "is-style-400"
+                },
+                {
+                    "id": "square-400",
+                    "label": "1/1 400px",
+                    "classes": [
+                        "is-style-400"
+                    ],
+                    "class": "is-style-400"
+                }
+            ],
+            "panel": "Apparence"
+        }
+    ]
+}
